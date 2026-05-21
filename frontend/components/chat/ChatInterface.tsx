@@ -8,7 +8,7 @@ export default function ChatInterface() {
   const chat = useChat()
 
   return (
-    <div className="flex h-screen bg-[#0a0a0a] overflow-hidden">
+    <div className="flex h-screen bg-[#0d0d0d] overflow-hidden">
       <ChatSidebar
         user={chat.user}
         sessions={chat.sessions}

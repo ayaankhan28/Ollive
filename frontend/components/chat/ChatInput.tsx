@@ -1,25 +1,27 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { SendHorizonal } from 'lucide-react'
+import { Plus, ArrowUp, Mic, Square } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface ChatInputProps {
   onSend: (message: string) => void
   isStreaming: boolean
   isConnected: boolean
+  variant?: 'bar' | 'pill'
 }
 
 export default function ChatInput({
   onSend,
   isStreaming,
   isConnected,
+  variant = 'bar',
 }: ChatInputProps) {
   const [value, setValue] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const MAX_ROWS = 5
-  const LINE_HEIGHT = 24 // approximate px per row
-  const BASE_HEIGHT = 24 // single row height in px
+  const LINE_HEIGHT = 24
+  const BASE_HEIGHT = 24
 
   const adjustHeight = useCallback(() => {
     const el = textareaRef.current
@@ -57,68 +59,98 @@ export default function ChatInput({
 
   const canSend = value.trim().length > 0 && !isStreaming && isConnected
 
-  return (
-    <div className="flex-shrink-0 border-t border-[#1e1e1e] bg-[#0a0a0a] px-4 py-4">
-      <div className="max-w-4xl mx-auto">
-        {/* Streaming indicator */}
-        {isStreaming && (
-          <p className="text-[#7c3aed] text-xs mb-2 text-center animate-[fade-in_0.2s_ease-out]">
-            Ollive is responding...
-          </p>
-        )}
+  const inputRow = (
+    <>
+      <button
+        type="button"
+        tabIndex={-1}
+        className="flex-shrink-0 p-1 text-white/40 hover:text-white/70 transition-colors"
+      >
+        <Plus size={18} />
+      </button>
 
-        <div
+      <textarea
+        ref={textareaRef}
+        data-chat-input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={handleKeyDown}
+        placeholder={
+          isStreaming
+            ? 'Ollive is responding…'
+            : !isConnected
+            ? 'Connecting…'
+            : 'Ask anything'
+        }
+        disabled={isStreaming || !isConnected}
+        rows={1}
+        className="flex-1 bg-transparent text-white text-sm leading-6 resize-none outline-none placeholder-[#686868] disabled:opacity-40 disabled:cursor-not-allowed"
+        style={{ minHeight: `${BASE_HEIGHT}px` }}
+      />
+
+      <div className="flex items-center gap-1.5 flex-shrink-0">
+        {!canSend && !isStreaming && (
+          <button
+            type="button"
+            tabIndex={-1}
+            className="p-1.5 text-white/40 hover:text-white/70 transition-colors"
+          >
+            <Mic size={16} />
+          </button>
+        )}
+        <button
+          onClick={handleSend}
+          type="button"
+          disabled={!canSend && !isStreaming}
+          title={canSend ? 'Send (Enter)' : isStreaming ? 'Responding…' : 'Type a message'}
           className={cn(
-            'flex items-end gap-3 rounded-2xl px-4 py-3',
-            'bg-[#141414] border transition-all duration-150',
-            isStreaming
-              ? 'border-[#7c3aed]/40 shadow-lg shadow-purple-900/10'
-              : 'border-[#2a2a2a] hover:border-[#3a3a3a] focus-within:border-[#7c3aed]/60 focus-within:shadow-lg focus-within:shadow-purple-900/10'
+            'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-150',
+            canSend
+              ? 'bg-white text-black hover:bg-white/90 active:scale-95'
+              : isStreaming
+              ? 'bg-white/15 text-white/60 cursor-not-allowed'
+              : 'bg-[#2a2a2a] text-white/20 cursor-not-allowed'
           )}
         >
-          {/* Textarea */}
-          <textarea
-            ref={textareaRef}
-            data-chat-input
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={
-              isStreaming
-                ? 'Ollive is responding...'
-                : isConnected
-                ? 'Message Ollive... (Enter to send, Shift+Enter for newline)'
-                : 'Connecting to server...'
-            }
-            disabled={isStreaming || !isConnected}
-            rows={1}
-            className={cn(
-              'flex-1 bg-transparent text-white text-sm leading-6 resize-none',
-              'placeholder-[#444444] outline-none',
-              'disabled:opacity-50 disabled:cursor-not-allowed'
-            )}
-            style={{ minHeight: `${BASE_HEIGHT}px` }}
-          />
+          {isStreaming ? (
+            <Square size={10} className="fill-current" />
+          ) : (
+            <ArrowUp size={15} />
+          )}
+        </button>
+      </div>
+    </>
+  )
 
-          {/* Send button */}
-          <button
-            onClick={handleSend}
-            disabled={!canSend}
-            title="Send message (Enter)"
-            className={cn(
-              'flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center',
-              'transition-all duration-150',
-              canSend
-                ? 'bg-[#7c3aed] hover:bg-[#6d28d9] active:bg-[#5b21b6] text-white shadow-lg shadow-purple-900/30 hover:scale-105'
-                : 'bg-[#1f1f1f] text-[#444444] cursor-not-allowed'
-            )}
-          >
-            <SendHorizonal size={15} />
-          </button>
+  if (variant === 'pill') {
+    return (
+      <div
+        className={cn(
+          'flex items-end gap-2 px-4 py-3.5 rounded-3xl',
+          'bg-[#1f1f1f] border border-white/[0.08]',
+          'focus-within:border-white/[0.16] transition-all duration-200'
+        )}
+      >
+        {inputRow}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex-shrink-0 bg-[#0d0d0d] px-4 pb-5 pt-2">
+      <div className="max-w-3xl mx-auto space-y-2">
+        <div
+          className={cn(
+            'flex items-end gap-2 px-4 py-3.5 rounded-3xl',
+            'bg-[#1f1f1f] border transition-all duration-200',
+            isStreaming
+              ? 'border-white/[0.06]'
+              : 'border-white/[0.08] hover:border-white/[0.12] focus-within:border-white/[0.2]'
+          )}
+        >
+          {inputRow}
         </div>
-
-        {/* Footer hint */}
-        <p className="text-[#333333] text-[11px] text-center mt-2">
+        <p className="text-white/20 text-[11px] text-center">
           Ollive can make mistakes. Verify important information.
         </p>
       </div>

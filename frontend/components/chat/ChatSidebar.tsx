@@ -2,13 +2,16 @@
 
 import { useState, useRef, useEffect } from 'react'
 import {
-  PlusIcon,
-  MessageSquareIcon,
-  TrashIcon,
-  PencilIcon,
-  CheckIcon,
-  XIcon,
-  ZapIcon,
+  SquarePen,
+  Search,
+  Folder,
+  Code2,
+  MoreHorizontal,
+  PanelLeft,
+  Trash2,
+  Check,
+  X,
+  Pencil,
 } from 'lucide-react'
 import { cn, truncate } from '@/lib/utils'
 import type { Session, User } from '@/lib/types'
@@ -29,10 +32,9 @@ function SessionSkeleton() {
     <div className="space-y-1 px-2">
       {[1, 2, 3, 4, 5].map((i) => (
         <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg">
-          <div className="skeleton h-4 w-4 rounded flex-shrink-0" />
           <div
             className="skeleton h-3 rounded flex-grow"
-            style={{ width: `${60 + i * 8}%`, opacity: 1 - i * 0.12 }}
+            style={{ width: `${55 + i * 9}%`, opacity: 1 - i * 0.12 }}
           />
         </div>
       ))}
@@ -48,13 +50,7 @@ interface SessionItemProps {
   onRename: (title: string) => void
 }
 
-function SessionItem({
-  session,
-  isActive,
-  onSelect,
-  onDelete,
-  onRename,
-}: SessionItemProps) {
+function SessionItem({ session, isActive, onSelect, onDelete, onRename }: SessionItemProps) {
   const [isHovered, setIsHovered] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editTitle, setEditTitle] = useState(session.title)
@@ -75,9 +71,7 @@ function SessionItem({
 
   const handleConfirmEdit = () => {
     const trimmed = editTitle.trim()
-    if (trimmed && trimmed !== session.title) {
-      onRename(trimmed)
-    }
+    if (trimmed && trimmed !== session.title) onRename(trimmed)
     setIsEditing(false)
   }
 
@@ -99,33 +93,16 @@ function SessionItem({
   return (
     <div
       className={cn(
-        'group relative flex items-center gap-2 px-3 py-2.5 rounded-lg cursor-pointer',
-        'transition-all duration-150 select-none',
+        'group relative flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer',
+        'transition-colors duration-100 select-none',
         isActive
-          ? 'bg-[#1f1535] border border-[#6d28d9]/40 text-white'
-          : 'hover:bg-[#1a1a1a] text-[#cccccc] hover:text-white border border-transparent'
+          ? 'bg-white/[0.08] text-white'
+          : 'text-[#b4b4b4] hover:bg-white/[0.05] hover:text-white'
       )}
       onClick={!isEditing ? onSelect : undefined}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {/* Active indicator */}
-      {isActive && (
-        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-[#7c3aed] rounded-r-full" />
-      )}
-
-      {/* Icon */}
-      <MessageSquareIcon
-        size={14}
-        className={cn(
-          'flex-shrink-0 transition-colors',
-          isActive
-            ? 'text-[#8b5cf6]'
-            : 'text-[#666666] group-hover:text-[#888888]'
-        )}
-      />
-
-      {/* Title / Edit Input */}
       {isEditing ? (
         <input
           ref={inputRef}
@@ -133,35 +110,26 @@ function SessionItem({
           onChange={(e) => setEditTitle(e.target.value)}
           onKeyDown={handleKeyDown}
           onBlur={handleCancelEdit}
-          className="flex-1 bg-transparent text-sm text-white outline-none border-b border-[#7c3aed] min-w-0 py-0.5"
+          className="flex-1 bg-transparent text-sm text-white outline-none border-b border-white/20 min-w-0 py-0.5"
           onClick={(e) => e.stopPropagation()}
         />
       ) : (
-        <span className="flex-1 text-sm truncate min-w-0">
-          {truncate(session.title, 28)}
-        </span>
+        <span className="flex-1 text-sm truncate min-w-0">{truncate(session.title, 30)}</span>
       )}
 
-      {/* Action buttons */}
       {isEditing ? (
         <div className="flex items-center gap-1 flex-shrink-0">
           <button
-            onMouseDown={(e) => {
-              e.preventDefault()
-              handleConfirmEdit()
-            }}
-            className="p-0.5 rounded text-[#7c3aed] hover:text-[#a78bfa] transition-colors"
+            onMouseDown={(e) => { e.preventDefault(); handleConfirmEdit() }}
+            className="p-0.5 rounded text-white/50 hover:text-white transition-colors"
           >
-            <CheckIcon size={12} />
+            <Check size={12} />
           </button>
           <button
-            onMouseDown={(e) => {
-              e.preventDefault()
-              handleCancelEdit()
-            }}
-            className="p-0.5 rounded text-[#666666] hover:text-[#999999] transition-colors"
+            onMouseDown={(e) => { e.preventDefault(); handleCancelEdit() }}
+            className="p-0.5 rounded text-white/30 hover:text-white/60 transition-colors"
           >
-            <XIcon size={12} />
+            <X size={12} />
           </button>
         </div>
       ) : (
@@ -169,17 +137,17 @@ function SessionItem({
           <div className="flex items-center gap-0.5 flex-shrink-0">
             <button
               onClick={handleStartEdit}
-              className="p-1 rounded text-[#666666] hover:text-[#aaaaaa] hover:bg-[#2a2a2a] transition-colors"
+              className="p-1 rounded text-white/30 hover:text-white/70 hover:bg-white/[0.08] transition-colors"
               title="Rename"
             >
-              <PencilIcon size={11} />
+              <Pencil size={11} />
             </button>
             <button
               onClick={handleDelete}
-              className="p-1 rounded text-[#666666] hover:text-[#ef4444] hover:bg-[#2a2a2a] transition-colors"
+              className="p-1 rounded text-white/30 hover:text-red-400 hover:bg-white/[0.08] transition-colors"
               title="Delete"
             >
-              <TrashIcon size={11} />
+              <Trash2 size={11} />
             </button>
           </div>
         )
@@ -187,6 +155,13 @@ function SessionItem({
     </div>
   )
 }
+
+const NAV_ITEMS = [
+  { icon: Search, label: 'Search chats' },
+  { icon: Folder, label: 'Projects' },
+  { icon: Code2, label: 'Codex' },
+  { icon: MoreHorizontal, label: 'More' },
+]
 
 export default function ChatSidebar({
   user,
@@ -198,51 +173,71 @@ export default function ChatSidebar({
   deleteSession,
   renameSession,
 }: ChatSidebarProps) {
-  return (
-    <aside className="w-64 flex-shrink-0 bg-[#0f0f0f] border-r border-[#1e1e1e] flex flex-col h-full">
-      {/* Header / Logo */}
-      <div className="flex items-center gap-2.5 px-4 py-5 border-b border-[#1e1e1e]">
-        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#7c3aed] to-[#4c1d95] flex items-center justify-center flex-shrink-0 shadow-lg shadow-purple-900/30">
-          <ZapIcon size={14} className="text-white" />
-        </div>
-        <span className="text-white font-semibold text-base tracking-tight">
-          Ollive
-        </span>
-      </div>
+  const initials = user?.name
+    ? user.name
+        .split(' ')
+        .slice(0, 2)
+        .map((n) => n[0])
+        .join('')
+        .toUpperCase()
+    : user?.email
+    ? user.email[0].toUpperCase()
+    : 'U'
 
-      {/* New Chat Button */}
-      <div className="px-3 py-3">
-        <button
-          onClick={startNewChat}
-          className={cn(
-            'w-full flex items-center gap-2 px-3 py-2.5 rounded-lg',
-            'bg-[#7c3aed] hover:bg-[#6d28d9] active:bg-[#5b21b6]',
-            'text-white text-sm font-medium',
-            'transition-all duration-150',
-            'shadow-lg shadow-purple-900/20',
-            'border border-[#8b5cf6]/30'
-          )}
-        >
-          <PlusIcon size={15} />
-          <span>New Chat</span>
+  const displayName = user?.name || user?.email?.split('@')[0] || 'User'
+
+  return (
+    <aside className="w-64 flex-shrink-0 bg-[#111111] flex flex-col h-full">
+      {/* Top bar: logo + collapse icon */}
+      <div className="flex items-center justify-between px-3 pt-2.5 pb-1.5">
+        <div className="flex items-center gap-2 px-1.5 py-1">
+          <div className="w-7 h-7 rounded-lg bg-white/[0.08] flex items-center justify-center flex-shrink-0">
+            <span className="text-white text-xs font-bold">O</span>
+          </div>
+        </div>
+        <button className="p-2 rounded-lg hover:bg-white/[0.06] text-white/25 hover:text-white/60 transition-colors">
+          <PanelLeft size={15} />
         </button>
       </div>
 
-      {/* Sessions List */}
-      <div className="flex-1 overflow-y-auto min-h-0 py-1">
+      {/* New chat */}
+      <div className="px-2 pb-1">
+        <button
+          onClick={startNewChat}
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#c0c0c0] hover:bg-white/[0.06] hover:text-white transition-colors text-sm"
+        >
+          <SquarePen size={15} className="flex-shrink-0 text-white/60" />
+          <span>New chat</span>
+        </button>
+      </div>
+
+      {/* Nav items */}
+      <nav className="px-2 space-y-0.5 pb-1">
+        {NAV_ITEMS.map(({ icon: Icon, label }) => (
+          <button
+            key={label}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#c0c0c0] hover:bg-white/[0.06] hover:text-white transition-colors text-sm"
+          >
+            <Icon size={15} className="flex-shrink-0 text-white/60" />
+            <span>{label}</span>
+          </button>
+        ))}
+      </nav>
+
+      {/* Recents section */}
+      <div className="flex-1 overflow-y-auto min-h-0 mt-3">
+        <div className="px-4 mb-1.5">
+          <span className="text-[#686868] text-xs font-medium">Recents</span>
+        </div>
+
         {isLoadingSessions ? (
           <SessionSkeleton />
         ) : sessions.length === 0 ? (
-          <div className="px-4 py-8 text-center">
-            <MessageSquareIcon
-              size={24}
-              className="mx-auto mb-2 text-[#333333]"
-            />
-            <p className="text-xs text-[#555555]">No conversations yet</p>
-            <p className="text-xs text-[#444444] mt-1">Start a new chat above</p>
+          <div className="px-4 py-5">
+            <p className="text-[#505050] text-sm">No conversations yet</p>
           </div>
         ) : (
-          <div className="space-y-0.5 px-2">
+          <div className="px-2 space-y-0.5">
             {sessions.map((session) => (
               <SessionItem
                 key={session.id}
@@ -257,17 +252,23 @@ export default function ChatSidebar({
         )}
       </div>
 
-      {/* Footer — user info */}
-      <div className="px-4 py-3 border-t border-[#1e1e1e]">
-        {user ? (
-          <p className="text-[#444444] text-xs truncate" title={user.email}>
-            {user.email}
-          </p>
-        ) : (
-          <p className="text-[#333333] text-xs text-center">
-            Powered by Claude &amp; Gemini
-          </p>
-        )}
+      {/* User footer */}
+      <div className="px-2 py-2.5 border-t border-white/[0.06]">
+        <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/[0.06] transition-colors text-left">
+          <div className="w-8 h-8 rounded-full bg-[#10a37f] flex items-center justify-center text-white text-xs font-bold flex-shrink-0 select-none">
+            {initials}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-white text-sm font-medium truncate leading-tight">
+              {displayName}
+            </p>
+            {user?.email && (
+              <p className="text-[#686868] text-xs truncate leading-tight mt-0.5">
+                {user.email}
+              </p>
+            )}
+          </div>
+        </button>
       </div>
     </aside>
   )

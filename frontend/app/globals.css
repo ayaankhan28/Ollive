@@ -11,9 +11,9 @@
 html,
 body {
   height: 100%;
-  background-color: #0a0a0a;
+  background-color: #0d0d0d;
   color: #ffffff;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -39,7 +39,7 @@ body {
 
 /* Selection */
 ::selection {
-  background: rgba(124, 58, 237, 0.3);
+  background: rgba(255, 255, 255, 0.15);
   color: #ffffff;
 }
 
@@ -188,7 +188,7 @@ body {
 .streaming-cursor::after {
   content: "▋";
   display: inline-block;
-  color: #7c3aed;
+  color: rgba(255, 255, 255, 0.5);
   animation: cursor-blink 1s step-end infinite;
   margin-left: 1px;
   font-size: 0.9em;
