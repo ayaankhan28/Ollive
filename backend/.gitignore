@@ -15,9 +15,6 @@ build/
 venv/
 env/
 
-# Poetry
-poetry.lock
-
 # Environment variables
 .env
 .env.*
