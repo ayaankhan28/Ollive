@@ -158,16 +158,18 @@ function TurnCard({ turn, index }: { turn: TraceDetail; index: number }) {
 export default async function SessionDetailPage({
   params,
 }: {
-  params: { session_id: string }
+  params: Promise<{ session_id: string }>
 }) {
+  const { session_id } = await params
+
   let data = null
   try {
-    data = await getSessionDetail(params.session_id)
+    data = await getSessionDetail(session_id)
   } catch {
     notFound()
   }
 
-  const shortId = `${params.session_id.slice(0, 8)}…${params.session_id.slice(-4)}`
+  const shortId = `${session_id.slice(0, 8)}…${session_id.slice(-4)}`
 
   return (
     <div className="flex flex-col h-full">

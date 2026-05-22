@@ -24,6 +24,16 @@ logger = logging.getLogger(__name__)
 _MAX_TOOL_ROUNDS = 5
 
 
+def _msg_preview(messages: List[Dict[str, Any]]) -> Optional[str]:
+    """Extract a string preview from the last message, regardless of content type."""
+    if not messages:
+        return None
+    content = messages[-1].get("content", "")
+    if isinstance(content, str):
+        return content[:200] or None
+    return str(content)[:200] or None
+
+
 async def run_agent_turn(
     messages: List[Dict[str, Any]],
     session_id: Optional[str] = None,
@@ -76,7 +86,7 @@ async def run_agent_turn(
                 span_type="generation",
                 parent_trace_id=root_trace.trace_id if root_trace else None,
                 sequence=sequence,
-                input_preview=current_messages[-1].get("content", "")[:200] if current_messages else None,
+                input_preview=_msg_preview(current_messages),
                 session_id=session_id,
                 user_id=user_id,
             ) if obs else None
@@ -91,6 +101,21 @@ async def run_agent_turn(
             )
 
             if gen_trace:
+                # Capture the full LLM output before emitting.
+                # Content blocks can be text (final response) or tool_use calls.
+                output_parts: list[str] = []
+                for block in response.content:
+                    if hasattr(block, "text") and block.text:
+                        output_parts.append(block.text)
+                    elif getattr(block, "type", None) == "tool_use":
+                        # Summarise tool calls as readable output
+                        output_parts.append(
+                            f"[tool_use: {block.name} | input: {str(block.input)[:120]}]"
+                        )
+                if output_parts:
+                    # _chunks is joined into output_preview by Trace._build_payload()
+                    gen_trace._chunks = output_parts
+
                 gen_trace.complete(
                     prompt_tokens=response.usage.input_tokens,
                     completion_tokens=response.usage.output_tokens,
@@ -140,12 +165,18 @@ async def run_agent_turn(
                     ) if obs else None
                     sequence += 1
 
-                    result = await execute_tool(block.name, tool_input)
-
-                    if tool_trace:
-                        tool_trace._chunks = [result[:200]]
-                        tool_trace.complete()
-                        tool_trace.emit_nowait()
+                    try:
+                        result = await execute_tool(block.name, tool_input)
+                        if tool_trace:
+                            tool_trace._chunks = [result[:200]]
+                            tool_trace.complete()
+                            tool_trace.emit_nowait()
+                    except Exception as tool_err:
+                        result = f"Tool error: {tool_err}"
+                        if tool_trace:
+                            tool_trace._chunks = [result[:200]]
+                            tool_trace.fail(tool_err)
+                            tool_trace.emit_nowait()
 
                     yield {
                         "type": "tool_end",

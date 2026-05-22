@@ -64,11 +64,10 @@ const STATUSES = ['', 'success', 'error', 'cancelled']
 export default async function TracesPage({
   searchParams,
 }: {
-  searchParams: { page?: string; status?: string; provider?: string }
+  searchParams: Promise<{ page?: string; status?: string; provider?: string }>
 }) {
-  const page   = Number(searchParams.page ?? 1)
-  const status = searchParams.status
-  const provider = searchParams.provider
+  const { page: _page, status, provider } = await searchParams
+  const page = Number(_page ?? 1)
 
   let data = null
   let error = false

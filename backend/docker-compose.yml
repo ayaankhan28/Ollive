@@ -51,21 +51,6 @@ services:
       db:
         condition: service_healthy
 
-  admin:
-    image: node:20-alpine
-    working_dir: /app
-    command: sh -c "npm install && npm run dev"
-    ports:
-      - "3001:3001"
-    environment:
-      # Used by server-side Next.js (SSR inside Docker network)
-      INGESTION_URL: http://ingestion:8001
-      # Used by the browser (outside Docker, mapped port)
-      NEXT_PUBLIC_INGESTION_URL: http://localhost:8001
-    volumes:
-      - ../admin_panel:/app
-    depends_on:
-      - ingestion
 
 volumes:
   postgres_data:

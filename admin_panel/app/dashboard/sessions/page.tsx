@@ -18,9 +18,10 @@ function fmtTokens(n: number): string {
 export default async function SessionsPage({
   searchParams,
 }: {
-  searchParams: { page?: string }
+  searchParams: Promise<{ page?: string }>
 }) {
-  const page = Number(searchParams.page ?? 1)
+  const { page: _page } = await searchParams
+  const page = Number(_page ?? 1)
   let data = null
   let error = false
 

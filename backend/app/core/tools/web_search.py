@@ -42,4 +42,4 @@ async def web_search(query: str, max_results: int = 3) -> str:
 
     except Exception as e:
         logger.error("Tavily search error: %s", e)
-        return f"Search failed: {e}"
+        raise

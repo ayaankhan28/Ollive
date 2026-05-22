@@ -86,12 +86,8 @@ TOOL_REGISTRY: dict[str, Any] = {
 
 
 async def execute_tool(name: str, tool_input: dict) -> str:
-    """Execute a tool by name with the given input dict. Returns string result."""
+    """Execute a tool by name with the given input dict. Returns string result or raises on failure."""
     fn = TOOL_REGISTRY.get(name)
     if fn is None:
-        return f"Unknown tool: {name}"
-    try:
-        return await fn(**tool_input)
-    except Exception as e:
-        logger.error("Tool %s failed: %s", name, e)
-        return f"Tool error: {e}"
+        raise ValueError(f"Unknown tool: {name}")
+    return await fn(**tool_input)

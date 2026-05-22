@@ -36,7 +36,7 @@ function MetricChart({
 }) {
   const chartData = data.map((d) => ({ ...d, ts: fmtHour(d.timestamp) }))
   const max = Math.max(...data.map((d) => d.value), 1)
-  const latest = data[data.length - 1]?.value ?? 0
+  const avg = data.length > 0 ? data.reduce((s, d) => s + d.value, 0) / data.length : 0
 
   return (
     <div className={`${light ? 'bg-[#edeae5] cream-grid' : 'bg-[#141414] border border-[#1a1a1a]'} rounded-[10px] p-5`}>
@@ -44,7 +44,7 @@ function MetricChart({
         <div>
           <div className={`text-[11px] font-medium mb-1.5 ${light ? 'text-[#888]' : 'text-[#555]'}`}>{label}</div>
           <div className={`stat-num text-[28px] ${light ? 'text-[#2a2a2a]' : 'text-[#ccc]'}`}>
-            {formatY ? formatY(latest) : `${Math.round(latest)}${unit}`}
+            {formatY ? formatY(avg) : `${Math.round(avg)}${unit}`}
           </div>
         </div>
       </div>
