@@ -6,7 +6,27 @@ import ChatMessage from './ChatMessage'
 import ChatInput from './ChatInput'
 import ToolCallBubble from './ToolCallBubble'
 import { useChatStore } from '@/store/chatStore'
+import { useSmoothedText } from '@/hooks/useSmoothedText'
 import type { Message, ToolCall } from '@/lib/types'
+
+// Renders the streaming response through the smoothing buffer so chunks
+// appear as continuous typing rather than irregular network-sized bursts.
+function StreamingMessage({
+  content,
+  isStreaming,
+}: {
+  content: string
+  isStreaming: boolean
+}) {
+  const smoothed = useSmoothedText(content, isStreaming)
+  return (
+    <ChatMessage
+      message={{ session_id: '', role: 'assistant', content: smoothed }}
+      isLast={true}
+      isStreaming={true}
+    />
+  )
+}
 
 interface ChatWindowProps {
   messages: Message[]
@@ -198,11 +218,7 @@ export default function ChatWindow({
           )}
 
           {isStreaming && streamingContent && (
-            <ChatMessage
-              message={{ session_id: '', role: 'assistant', content: streamingContent }}
-              isLast={true}
-              isStreaming={true}
-            />
+            <StreamingMessage content={streamingContent} isStreaming={isStreaming} />
           )}
 
           {/* Thinking dots — only shown while waiting (no chunks and no tool calls yet) */}
