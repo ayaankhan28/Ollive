@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import AsyncIterator, List, Dict
+from typing import AsyncIterator, List, Dict, Any
 
 from google import genai
 from google.genai import types
@@ -11,32 +11,22 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
-def _convert_messages_to_gemini(
-    messages: List[Dict], system: str = ""
-) -> tuple[List[types.Content], str]:
-    """Convert OpenAI-format messages to Gemini format."""
-    contents = []
-
-    for msg in messages:
-        role = msg["role"]
-        content = msg["content"]
-
-        # Gemini uses "user" and "model" roles
-        gemini_role = "model" if role == "assistant" else "user"
-
-        contents.append(
-            types.Content(
-                role=gemini_role,
-                parts=[types.Part(text=content)],
-            )
+def _to_gemini_contents(messages: List[Dict]) -> List[types.Content]:
+    """Convert OpenAI-format messages to Gemini Content objects."""
+    return [
+        types.Content(
+            role="model" if msg["role"] == "assistant" else "user",
+            parts=[types.Part(text=msg["content"])],
         )
-
-    return contents, system
+        for msg in messages
+    ]
 
 
 class GeminiProvider(BaseLLMProvider):
+    """Google Gemini provider — pure LLM logic, no tracing concerns."""
+
     def __init__(self):
-        self._client = None
+        self._client: genai.Client | None = None
 
     def _get_client(self) -> genai.Client:
         if self._client is None:
@@ -47,42 +37,54 @@ class GeminiProvider(BaseLLMProvider):
     def name(self) -> str:
         return "gemini"
 
-    async def stream_chat(
-        self, messages: List[Dict], system: str = ""
+    @property
+    def model(self) -> str:
+        return settings.GEMINI_MODEL
+
+    @property
+    def max_tokens(self) -> int:
+        return settings.GEMINI_MAX_TOKENS
+
+    async def _do_stream(
+        self, messages: List[Dict[str, Any]], system: str = ""
     ) -> AsyncIterator[str]:
+        """Stream chat from Gemini. Sets self._last_usage if usage is available."""
         client = self._get_client()
-        contents, system_instruction = _convert_messages_to_gemini(messages, system)
+        contents = _to_gemini_contents(messages)
 
-        config_kwargs: Dict = {
-            "max_output_tokens": 8096,
-        }
-        if system_instruction:
-            config_kwargs["system_instruction"] = system_instruction
-
+        config_kwargs: Dict[str, Any] = {"max_output_tokens": settings.GEMINI_MAX_TOKENS}
+        if system:
+            config_kwargs["system_instruction"] = system
         config = types.GenerateContentConfig(**config_kwargs)
 
         try:
-            # google-genai SDK uses sync iteration; run in executor to avoid blocking
             loop = asyncio.get_event_loop()
 
-            def _sync_stream():
-                chunks = []
-                response = client.models.generate_content_stream(
-                    model="gemini-2.0-flash",
-                    contents=contents,
-                    config=config,
-                )
-                for chunk in response:
+            def _sync_stream() -> tuple[list[str], Any]:
+                chunks: list[str] = []
+                usage_meta = None
+                for chunk in client.models.generate_content_stream(
+                    model=settings.GEMINI_MODEL, contents=contents, config=config
+                ):
                     if chunk.text:
                         chunks.append(chunk.text)
-                return chunks
+                    if hasattr(chunk, "usage_metadata") and chunk.usage_metadata:
+                        usage_meta = chunk.usage_metadata
+                return chunks, usage_meta
 
-            chunks = await loop.run_in_executor(None, _sync_stream)
-            for chunk_text in chunks:
-                yield chunk_text
+            chunks, usage_meta = await loop.run_in_executor(None, _sync_stream)
+
+            for text in chunks:
+                yield text
+
+            if usage_meta and hasattr(usage_meta, "prompt_token_count"):
+                self._last_usage = (
+                    getattr(usage_meta, "prompt_token_count", 0) or 0,
+                    getattr(usage_meta, "candidates_token_count", 0) or 0,
+                )
 
         except Exception as e:
-            logger.error(f"Gemini streaming error: {e}")
+            logger.error("Gemini streaming error: %s", e)
             raise
 
     async def generate_title(self, first_message: str) -> str:
@@ -90,7 +92,7 @@ class GeminiProvider(BaseLLMProvider):
         try:
             loop = asyncio.get_event_loop()
 
-            def _sync_generate():
+            def _sync_generate() -> str:
                 config = types.GenerateContentConfig(
                     max_output_tokens=32,
                     system_instruction=(
@@ -100,18 +102,14 @@ class GeminiProvider(BaseLLMProvider):
                     ),
                 )
                 response = client.models.generate_content(
-                    model="gemini-2.0-flash",
-                    contents=first_message,
-                    config=config,
+                    model=settings.GEMINI_MODEL, contents=first_message, config=config
                 )
                 return response.text
 
             title = await loop.run_in_executor(None, _sync_generate)
             title = title.strip().strip('"').strip("'")
-            if len(title) > 60:
-                title = title[:57] + "..."
-            return title
+            return title[:57] + "..." if len(title) > 60 else title
         except Exception as e:
-            logger.error(f"Error generating title with Gemini: {e}")
+            logger.error("Gemini title generation failed: %s", e)
             words = first_message.split()[:4]
             return " ".join(words) if words else "New Chat"
