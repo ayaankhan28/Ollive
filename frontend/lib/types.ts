@@ -16,8 +16,8 @@ export interface Session {
 export interface Message {
   id?: string
   session_id: string
-  role: 'user' | 'assistant'
-  content: string
+  role: 'user' | 'assistant' | 'tool'
+  content: string   // for role="tool" this is JSON-serialised ToolCall data
   created_at?: string
 }
 

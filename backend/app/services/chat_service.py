@@ -1,3 +1,4 @@
+import json
 import uuid
 import logging
 from typing import AsyncIterator, Dict, Any, Optional
@@ -47,9 +48,13 @@ async def process_chat_message(
         await session_service.update_session_updated_at(db, session.id)
         await db.commit()
 
-        # 3. Build conversation history for LLM
+        # 3. Build conversation history for LLM (exclude role="tool" display rows)
         history = await session_service.get_all_conversation_history(db, session.id, limit=20)
-        llm_messages = [{"role": c.role, "content": c.content} for c in history]
+        llm_messages = [
+            {"role": c.role, "content": c.content}
+            for c in history
+            if c.role in ("user", "assistant")
+        ]
 
         # 4. Auto-generate title on first message
         if is_new_session or session.title == "New Chat":
@@ -75,6 +80,9 @@ async def process_chat_message(
 
         # 6. Run agent loop — yields tool_start / tool_end / chunk events
         full_response = ""
+        tool_inputs: Dict[str, Any] = {}   # tool_name → tool_input (paired with tool_end)
+        completed_tools: list[Dict[str, Any]] = []
+
         async for event in run_agent_turn(
             messages=llm_messages,
             session_id=str(session.id),
@@ -84,11 +92,25 @@ async def process_chat_message(
         ):
             if event["type"] == "chunk":
                 full_response += event["content"]
+            elif event["type"] == "tool_start":
+                tool_inputs[event["tool_name"]] = event["tool_input"]
+            elif event["type"] == "tool_end":
+                completed_tools.append({
+                    "tool_name": event["tool_name"],
+                    "tool_input": tool_inputs.pop(event["tool_name"], {}),
+                    "tool_result": event["tool_result"],
+                    "status": "done",
+                })
             yield event
 
-        # 7. Save assistant response (partial if stopped)
+        # 7. Persist tool calls then assistant response (partial if stopped)
+        for tool_data in completed_tools:
+            await session_service.add_message(
+                db, session.id, user_id, "tool", json.dumps(tool_data)
+            )
         if full_response:
             await session_service.add_message(db, session.id, user_id, "assistant", full_response)
+        if completed_tools or full_response:
             await session_service.update_session_updated_at(db, session.id)
             await db.commit()
 

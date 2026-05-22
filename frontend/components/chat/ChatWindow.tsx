@@ -149,15 +149,33 @@ export default function ChatWindow({
         />
       ) : (
         <div className="flex flex-col gap-0.5 px-4 py-6 max-w-3xl mx-auto w-full">
-          {messages.map((message, index) => (
-            <ChatMessage
-              key={message.id || `msg-${index}`}
-              message={message}
-              isLast={index === messages.length - 1}
-            />
-          ))}
+          {messages.map((message, index) => {
+            if (message.role === 'tool') {
+              try {
+                const data = JSON.parse(message.content)
+                const call: ToolCall = {
+                  id: message.id || `tool-${index}`,
+                  tool_name: data.tool_name,
+                  tool_input: data.tool_input ?? {},
+                  tool_result: data.tool_result,
+                  status: data.status ?? 'done',
+                  started_at: message.created_at || new Date().toISOString(),
+                }
+                return <ToolCallBubble key={message.id || `tool-${index}`} call={call} />
+              } catch {
+                return null
+              }
+            }
+            return (
+              <ChatMessage
+                key={message.id || `msg-${index}`}
+                message={message}
+                isLast={index === messages.length - 1}
+              />
+            )
+          })}
 
-          {/* Tool call steps — shown inline during agent execution */}
+          {/* Live tool calls during active streaming */}
           {toolCalls.map((call) => (
             <ToolCallBubble key={call.id} call={call} />
           ))}

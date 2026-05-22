@@ -88,13 +88,29 @@ export function useChat() {
         }
 
         case 'done': {
+          const doneState = useChatStore.getState()
+          const sessionId = msg.session_id || doneState.activeSessionId || ''
+
+          // Commit completed tool calls as messages before the assistant reply
+          for (const call of doneState.toolCalls) {
+            if (call.status === 'done') {
+              doneState.addMessage({
+                session_id: sessionId,
+                role: 'tool',
+                content: JSON.stringify({
+                  tool_name: call.tool_name,
+                  tool_input: call.tool_input,
+                  tool_result: call.tool_result ?? '',
+                  status: 'done',
+                }),
+                created_at: call.started_at,
+              })
+            }
+          }
+
           // Finalize the streaming message
-          const finalContent = useChatStore.getState().streamingContent
+          const finalContent = doneState.streamingContent
           if (finalContent) {
-            const sessionId =
-              msg.session_id ||
-              useChatStore.getState().activeSessionId ||
-              ''
             const assistantMessage: Message = {
               session_id: sessionId,
               role: 'assistant',
@@ -300,16 +316,34 @@ export function useChat() {
     const currentStore = useChatStore.getState()
     if (!currentStore.isStreaming) return
 
-    // Immediately finalize whatever was received so far
+    const sessionId = currentStore.activeSessionId || ''
+
+    // Commit any completed tool calls before the partial response
+    for (const call of currentStore.toolCalls) {
+      if (call.status === 'done') {
+        currentStore.addMessage({
+          session_id: sessionId,
+          role: 'tool',
+          content: JSON.stringify({
+            tool_name: call.tool_name,
+            tool_input: call.tool_input,
+            tool_result: call.tool_result ?? '',
+            status: 'done',
+          }),
+          created_at: call.started_at,
+        })
+      }
+    }
+
+    // Finalize whatever text arrived before stop
     const partialContent = currentStore.streamingContent
     if (partialContent) {
-      const assistantMessage: Message = {
-        session_id: currentStore.activeSessionId || '',
+      currentStore.addMessage({
+        session_id: sessionId,
         role: 'assistant',
         content: partialContent,
         created_at: new Date().toISOString(),
-      }
-      currentStore.addMessage(assistantMessage)
+      })
     }
     currentStore.clearStreamingContent()
     currentStore.setIsStreaming(false)
