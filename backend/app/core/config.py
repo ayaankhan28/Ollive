@@ -1,6 +1,10 @@
+import os
 from typing import List
 
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
+
+load_dotenv()
 
 
 class Settings(BaseSettings):
@@ -19,7 +23,7 @@ class Settings(BaseSettings):
     # LLM provider credentials
     ANTHROPIC_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
-    TAVILY_API_KEY: str = "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"
+    TAVILY_API_KEY: str = os.getenv("TAVILY_API_KEY", "")
 
     # Anthropic model config
     ANTHROPIC_MODEL: str = "claude-sonnet-4-6"
