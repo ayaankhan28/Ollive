@@ -2,20 +2,19 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# Install poetry
 RUN pip install --no-cache-dir poetry
-
-# Don't create a virtualenv — we're already isolated in Docker
 RUN poetry config virtualenvs.create false
 
-# Copy dependency files first so this layer is cached unless deps change
-COPY pyproject.toml poetry.lock* ./
+# Install the observe-me SDK from the repo root (build context = repo root)
+COPY sdk /sdk
+RUN pip install --no-cache-dir /sdk
 
-# Install only production dependencies
+# Install backend dependencies
+COPY backend/pyproject.toml backend/poetry.lock* ./
 RUN poetry install --only main --no-interaction --no-ansi --no-root
 
-# Copy application source
-COPY . .
+# Copy backend source
+COPY backend/. .
 
 EXPOSE 8000
 

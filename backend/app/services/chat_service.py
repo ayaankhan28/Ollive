@@ -52,19 +52,13 @@ async def process_chat_message(
         }
 
         # 3. Save the user message to DB
-        await session_service.add_message(
-            db, session.id, user_id, "user", message
-        )
+        user_msg = await session_service.add_message(db, session.id, user_id, "user", message)
         await session_service.update_session_updated_at(db, session.id)
         await db.commit()
 
         # 4. Get conversation history for LLM context
-        history = await session_service.get_all_conversation_history(
-            db, session.id, limit=20
-        )
+        history = await session_service.get_all_conversation_history(db, session.id, limit=20)
 
-        # Format messages for LLM (exclude the most recent user message since we
-        # already have it, the history now includes it)
         llm_messages = [
             {"role": conv.role, "content": conv.content}
             for conv in history
@@ -72,10 +66,8 @@ async def process_chat_message(
 
         # 5. Auto-generate title for new sessions on first message
         if is_new_session or session.title == "New Chat":
-            # Count existing user messages
             user_messages = [m for m in llm_messages if m["role"] == "user"]
             if len(user_messages) == 1:
-                # This is the first message - generate title asynchronously
                 try:
                     new_title = await llm_manager.generate_title(message)
                     updated_session = await session_service.update_session_title(
@@ -83,19 +75,24 @@ async def process_chat_message(
                     )
                     await db.commit()
                     if updated_session:
-                        # Re-send session_info with the new title
                         yield {
                             "type": "session_info",
                             "session_id": str(session.id),
                             "title": new_title,
                         }
-                        logger.info(
-                            f"Generated title '{new_title}' for session {session.id}"
-                        )
+                        logger.info(f"Generated title '{new_title}' for session {session.id}")
                 except Exception as title_err:
                     logger.warning(f"Failed to generate title: {title_err}")
 
-        # 6. Stream the LLM response
+        # 6. Stream the LLM response — set observe-me context so the SDK can link traces
+        try:
+            import observe_me
+            observe_me.set_session_id(str(session.id))
+            observe_me.set_user_id(str(user_id))
+            observe_me.set_conversation_id(str(user_msg.id) if user_msg else None)
+        except ImportError:
+            pass
+
         full_response = ""
         async for chunk in llm_manager.stream_chat(llm_messages):
             if chunk:
@@ -125,3 +122,12 @@ async def process_chat_message(
         yield {"type": "error", "error": str(e)}
         if session:
             yield {"type": "done", "session_id": str(session.id)}
+    finally:
+        # Clear observe-me context vars
+        try:
+            import observe_me
+            observe_me.set_session_id(None)
+            observe_me.set_user_id(None)
+            observe_me.set_conversation_id(None)
+        except ImportError:
+            pass
