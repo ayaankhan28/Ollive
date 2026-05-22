@@ -53,7 +53,7 @@ async def process_chat_message(
         await db.commit()
 
         # 3. Build conversation history for LLM (exclude role="tool" display rows)
-        history = await session_service.get_all_conversation_history(db, session.id, limit=20)
+        history = await session_service.get_all_conversation_history(db, session.id)
         # Re-cache in case commit expired the object
         session_id_str = str(session.id)
         llm_messages = [

@@ -113,14 +113,15 @@ async def get_conversation_history(
 async def get_all_conversation_history(
     db: AsyncSession,
     session_id: uuid.UUID,
-    limit: int = 20,
 ) -> List[Conversation]:
-    """Get conversation history ordered chronologically."""
+    """Return every message in the session in chronological order.
+
+    No limit — all messages in a session are relevant context.
+    """
     result = await db.execute(
         sa.select(Conversation)
         .where(Conversation.session_id == session_id)
         .order_by(Conversation.created_at.asc())
-        .limit(limit)
     )
     return list(result.scalars().all())
 

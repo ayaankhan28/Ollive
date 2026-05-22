@@ -99,7 +99,7 @@ async def get_session_messages(
         )
 
     conversations = await session_service.get_all_conversation_history(
-        db, session_id, limit=limit
+        db, session_id
     )
 
     messages = [
