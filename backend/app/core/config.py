@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     # LLM provider credentials
     ANTHROPIC_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
+    TAVILY_API_KEY: str = "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"
 
     # Anthropic model config
     ANTHROPIC_MODEL: str = "claude-sonnet-4-6"

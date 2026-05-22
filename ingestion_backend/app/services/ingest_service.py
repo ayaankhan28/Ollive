@@ -1,5 +1,4 @@
 import logging
-from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +12,10 @@ logger = logging.getLogger(__name__)
 async def ingest_trace(db: AsyncSession, payload: TraceIngest) -> Trace:
     trace = Trace(
         trace_id=payload.trace_id,
+        name=payload.name or f"{payload.span_type}.{payload.provider}",
+        span_type=payload.span_type,
+        parent_trace_id=payload.parent_trace_id,
+        sequence=payload.sequence,
         provider=payload.provider,
         model=payload.model,
         status=payload.status,
@@ -35,20 +38,22 @@ async def ingest_trace(db: AsyncSession, payload: TraceIngest) -> Trace:
         error_message=payload.error_message,
     )
     db.add(trace)
-    await db.flush()  # get the trace_id persisted before adding events
+    await db.flush()
 
     for ev in payload.stream_events:
-        event = StreamEvent(
+        db.add(StreamEvent(
             trace_id=payload.trace_id,
             event_type=ev.event_type,
             sequence_number=ev.sequence_number,
             content=ev.content,
             latency_from_start_ms=ev.latency_from_start_ms,
             timestamp=ev.timestamp,
-        )
-        db.add(event)
+        ))
 
     await db.commit()
-    logger.info("Ingested trace %s — provider=%s model=%s status=%s tokens=%s",
-                payload.trace_id, payload.provider, payload.model, payload.status, payload.total_tokens)
+    logger.info(
+        "Ingested %s %s [%s] parent=%s tokens=%s",
+        payload.span_type, payload.name, payload.status,
+        payload.parent_trace_id or "root", payload.total_tokens,
+    )
     return trace

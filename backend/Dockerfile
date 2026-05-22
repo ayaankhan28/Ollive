@@ -10,8 +10,11 @@ COPY sdk /sdk
 RUN pip install --no-cache-dir /sdk
 
 # Install backend dependencies
+# poetry lock --no-update regenerates the lock file when pyproject.toml changes
+# without upgrading already-locked packages.
 COPY backend/pyproject.toml backend/poetry.lock* ./
-RUN poetry install --only main --no-interaction --no-ansi --no-root
+RUN poetry lock --no-interaction --no-ansi \
+ && poetry install --only main --no-interaction --no-ansi --no-root
 
 # Copy backend source
 COPY backend/. .

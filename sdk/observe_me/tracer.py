@@ -24,22 +24,33 @@ def _utcnow() -> datetime:
 
 
 class Trace:
-    """Represents a single LLM inference trace."""
+    """Represents a single span in the trace tree (root, generation, or tool)."""
 
     def __init__(
         self,
         client: "ObserveMeClient",
         provider: str,
         model: str,
+        # Span hierarchy
+        name: str = "",
+        span_type: str = "generation",   # trace | generation | tool | span
+        parent_trace_id: Optional[str] = None,
+        sequence: int = 0,
+        # Context
         session_id: Optional[str] = None,
         user_id: Optional[str] = None,
         conversation_id: Optional[str] = None,
+        # Model params
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         input_preview: Optional[str] = None,
     ) -> None:
         self._client = client
         self.trace_id = str(uuid4())
+        self.name = name or f"{span_type}.{provider}"
+        self.span_type = span_type
+        self.parent_trace_id = parent_trace_id
+        self.sequence = sequence
         self.provider = provider
         self.model = model
         self.session_id = session_id
@@ -64,7 +75,7 @@ class Trace:
         self._first_chunk_at: Optional[datetime] = None
         self._chunks: list[str] = []
         self._stream_events: list[dict] = []
-        self._sequence: int = 0
+        self._sequence_counter: int = 0
 
     # ------------------------------------------------------------------
     # Stream instrumentation
@@ -79,12 +90,12 @@ class Trace:
             elapsed_ms = int((now - self.started_at).total_seconds() * 1000)
             self._stream_events.append({
                 "event_type": "chunk",
-                "sequence_number": self._sequence,
+                "sequence_number": self._sequence_counter,
                 "content": text,
                 "latency_from_start_ms": elapsed_ms,
                 "timestamp": now.isoformat(),
             })
-        self._sequence += 1
+        self._sequence_counter += 1
 
     # ------------------------------------------------------------------
     # Terminal states
@@ -118,13 +129,13 @@ class Trace:
     # ------------------------------------------------------------------
 
     def emit_nowait(self) -> None:
-        """Schedule background emission. Safe to call from sync or async code."""
+        """Schedule background emission. Safe to call from async context."""
         payload = self._build_payload()
         try:
             loop = asyncio.get_running_loop()
             loop.create_task(self._client._enqueue(payload))
         except RuntimeError:
-            pass  # No running loop — skip emission silently
+            pass
 
     def _build_payload(self) -> dict:
         latency_ms = None
@@ -138,6 +149,10 @@ class Trace:
 
         return {
             "trace_id": self.trace_id,
+            "name": self.name,
+            "span_type": self.span_type,
+            "parent_trace_id": self.parent_trace_id,
+            "sequence": self.sequence,
             "provider": self.provider,
             "model": self.model,
             "status": self.status,

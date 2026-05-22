@@ -15,9 +15,14 @@ class StreamEventPayload(BaseModel):
 
 class TraceIngest(BaseModel):
     trace_id: str = Field(..., min_length=1, max_length=64)
+    name: Optional[str] = None
+    span_type: str = "generation"
+    parent_trace_id: Optional[str] = None
+    sequence: int = 0
+
     provider: str = Field(..., min_length=1, max_length=50)
     model: str = Field(..., min_length=1, max_length=100)
-    status: str = Field(default="success")
+    status: str = "success"
 
     session_id: Optional[UUID] = None
     user_id: Optional[UUID] = None

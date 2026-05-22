@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.base import get_db
 from app.schemas.analytics import (
     MetricsResponse,
+    SessionDetailResponse,
     SessionListResponse,
     SummaryResponse,
     TraceDetail,
@@ -32,9 +33,15 @@ async def list_traces(
     user_id: Optional[UUID] = Query(default=None),
     status: Optional[str] = Query(default=None),
     provider: Optional[str] = Query(default=None),
+    roots_only: bool = Query(default=True, description="Only return root spans (parent_trace_id IS NULL)"),
     db: AsyncSession = Depends(get_db),
 ):
-    return await analytics_service.list_traces(db, page=page, limit=limit, session_id=session_id, user_id=user_id, status=status, provider=provider)
+    return await analytics_service.list_traces(
+        db, page=page, limit=limit,
+        session_id=session_id, user_id=user_id,
+        status=status, provider=provider,
+        roots_only=roots_only,
+    )
 
 
 @router.get("/analytics/traces/{trace_id}", response_model=TraceDetail)
@@ -57,3 +64,8 @@ async def get_sessions(
     db: AsyncSession = Depends(get_db),
 ):
     return await analytics_service.get_sessions_analytics(db, page=page, limit=limit)
+
+
+@router.get("/analytics/sessions/{session_id}", response_model=SessionDetailResponse)
+async def get_session_detail(session_id: UUID, db: AsyncSession = Depends(get_db)):
+    return await analytics_service.get_session_detail(db, session_id)
