@@ -16,6 +16,7 @@ interface ChatWindowProps {
   messagesEndRef: React.RefObject<HTMLDivElement>
   onSuggestionClick: (prompt: string) => void
   onSend: (message: string) => void
+  onStop?: () => void
   isConnected: boolean
 }
 
@@ -40,11 +41,13 @@ const SUGGESTIONS = [
 function WelcomeScreen({
   onSuggestionClick,
   onSend,
+  onStop,
   isStreaming,
   isConnected,
 }: {
   onSuggestionClick: (prompt: string) => void
   onSend: (message: string) => void
+  onStop?: () => void
   isStreaming: boolean
   isConnected: boolean
 }) {
@@ -57,6 +60,7 @@ function WelcomeScreen({
       <div className="w-full max-w-[44rem] space-y-3">
         <ChatInput
           onSend={onSend}
+          onStop={onStop}
           isStreaming={isStreaming}
           isConnected={isConnected}
           variant="pill"
@@ -105,6 +109,7 @@ export default function ChatWindow({
   messagesEndRef,
   onSuggestionClick,
   onSend,
+  onStop,
   isConnected,
 }: ChatWindowProps) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -138,6 +143,7 @@ export default function ChatWindow({
         <WelcomeScreen
           onSuggestionClick={onSuggestionClick}
           onSend={onSend}
+          onStop={onStop}
           isStreaming={isStreaming}
           isConnected={isConnected}
         />

@@ -10,6 +10,8 @@ Trace tree produced per agent turn:
     └── llm.anthropic  (span_type="generation", sequence=3)  ← final streamed response
 """
 
+import asyncio
+import json
 import logging
 from typing import AsyncIterator, Dict, Any, List, Optional
 
@@ -39,13 +41,14 @@ async def run_agent_turn(
     session_id: Optional[str] = None,
     user_id: Optional[str] = None,
     conversation_id: Optional[str] = None,
+    cancel_event: Optional[asyncio.Event] = None,
 ) -> AsyncIterator[Dict[str, Any]]:
     """
     Run one full agent turn (possibly multiple tool calls) and yield WS events:
 
     - {"type": "tool_start", "tool_name": ..., "tool_input": {...}}
     - {"type": "tool_end",   "tool_name": ..., "tool_result": "..."}
-    - {"type": "chunk",      "content": "..."}   (streaming final response)
+    - {"type": "chunk",      "content": "..."}   (true streaming from LLM)
     """
     # ── Observability setup ──────────────────────────────────────────────────
     try:
@@ -67,7 +70,6 @@ async def run_agent_turn(
         input_preview=messages[-1].get("content", "")[:300] if messages else None,
     ) if obs else None
 
-    # Set root as active so child spans auto-parent to it
     _active_tok = None
     if obs and root_trace and _active_trace_id is not None:
         _active_tok = _active_trace_id.set(root_trace.trace_id)
@@ -78,7 +80,9 @@ async def run_agent_turn(
 
     try:
         for round_num in range(_MAX_TOOL_ROUNDS + 1):
-            # ── Non-streaming LLM call with tool definitions ─────────────
+            if cancel_event and cancel_event.is_set():
+                return
+
             gen_trace = obs.start_trace(
                 provider="anthropic",
                 model=settings.ANTHROPIC_MODEL,
@@ -92,70 +96,110 @@ async def run_agent_turn(
             ) if obs else None
             sequence += 1
 
-            response = await client.messages.create(
+            # ── True streaming LLM call ──────────────────────────────────
+            # content_blocks accumulates the full response as dicts so we can
+            # pass them back for tool-use rounds without needing SDK objects.
+            content_blocks: List[Dict[str, Any]] = []
+            tool_json_parts: Dict[int, List[str]] = {}
+            stop_reason: Optional[str] = None
+            cancelled_mid_stream = False
+
+            async with client.messages.stream(
                 model=settings.ANTHROPIC_MODEL,
                 max_tokens=settings.ANTHROPIC_MAX_TOKENS,
                 system=SYSTEM_PROMPT,
                 tools=ANTHROPIC_TOOL_DEFS,
                 messages=current_messages,
-            )
+            ) as stream:
+                async for event in stream:
+                    if cancel_event and cancel_event.is_set():
+                        cancelled_mid_stream = True
+                        break
 
+                    if event.type == "content_block_start":
+                        cb = event.content_block
+                        if cb.type == "text":
+                            content_blocks.append({"type": "text", "text": ""})
+                        elif cb.type == "tool_use":
+                            content_blocks.append({
+                                "type": "tool_use",
+                                "id": cb.id,
+                                "name": cb.name,
+                                "input": {},
+                            })
+                            tool_json_parts[event.index] = []
+
+                    elif event.type == "content_block_delta":
+                        delta = event.delta
+                        if delta.type == "text_delta":
+                            text = delta.text
+                            if event.index < len(content_blocks):
+                                content_blocks[event.index]["text"] += text
+                            yield {"type": "chunk", "content": text}
+                        elif delta.type == "input_json_delta":
+                            if event.index in tool_json_parts:
+                                tool_json_parts[event.index].append(delta.partial_json)
+
+                    elif event.type == "content_block_stop":
+                        idx = event.index
+                        if idx in tool_json_parts:
+                            try:
+                                content_blocks[idx]["input"] = json.loads(
+                                    "".join(tool_json_parts[idx])
+                                )
+                            except Exception:
+                                content_blocks[idx]["input"] = {}
+
+                # Only fetch final message when the stream was fully consumed.
+                if not cancelled_mid_stream:
+                    final_message = await stream.get_final_message()
+                    stop_reason = final_message.stop_reason
+
+            if cancelled_mid_stream:
+                return
+
+            # ── Tracing ──────────────────────────────────────────────────
             if gen_trace:
-                # Capture the full LLM output before emitting.
-                # Content blocks can be text (final response) or tool_use calls.
                 output_parts: list[str] = []
-                for block in response.content:
-                    if hasattr(block, "text") and block.text:
-                        output_parts.append(block.text)
-                    elif getattr(block, "type", None) == "tool_use":
-                        # Summarise tool calls as readable output
+                for block in content_blocks:
+                    if block["type"] == "text" and block.get("text"):
+                        output_parts.append(block["text"])
+                    elif block["type"] == "tool_use":
                         output_parts.append(
-                            f"[tool_use: {block.name} | input: {str(block.input)[:120]}]"
+                            f"[tool_use: {block['name']} | input: {str(block.get('input', {}))[:120]}]"
                         )
                 if output_parts:
-                    # _chunks is joined into output_preview by Trace._build_payload()
                     gen_trace._chunks = output_parts
-
                 gen_trace.complete(
-                    prompt_tokens=response.usage.input_tokens,
-                    completion_tokens=response.usage.output_tokens,
+                    prompt_tokens=final_message.usage.input_tokens,
+                    completion_tokens=final_message.usage.output_tokens,
                 )
                 gen_trace.emit_nowait()
 
-            # ── end_turn: stream final response ──────────────────────────
-            if response.stop_reason == "end_turn":
-                # Stream the response for good UX (chunk by character)
-                for block in response.content:
-                    if hasattr(block, "text") and block.text:
-                        # Emit as small chunks to simulate streaming
-                        text = block.text
-                        step = 6
-                        for i in range(0, len(text), step):
-                            yield {"type": "chunk", "content": text[i:i + step]}
+            # ── end_turn: text was already streamed chunk by chunk above ──
+            if stop_reason == "end_turn":
                 break
 
-            # ── tool_use: execute each tool then continue ─────────────────
-            if response.stop_reason == "tool_use":
+            # ── tool_use: execute tools then loop ─────────────────────────
+            if stop_reason == "tool_use":
                 tool_results: List[Dict[str, Any]] = []
 
-                for block in response.content:
-                    if not hasattr(block, "type") or block.type != "tool_use":
+                for block in content_blocks:
+                    if block["type"] != "tool_use":
                         continue
 
-                    tool_input = block.input if isinstance(block.input, dict) else {}
+                    tool_input = block.get("input", {})
 
-                    # Notify client the tool is starting
                     yield {
                         "type": "tool_start",
-                        "tool_name": block.name,
+                        "tool_name": block["name"],
                         "tool_input": tool_input,
                     }
 
-                    # Tool trace (child of root)
                     tool_trace = obs.start_trace(
                         provider="tool",
-                        model=block.name,
-                        name=f"tool.{block.name}",
+                        model=block["name"],
+                        name=f"tool.{block['name']}",
                         span_type="tool",
                         parent_trace_id=root_trace.trace_id if root_trace else None,
                         sequence=sequence,
@@ -166,7 +210,7 @@ async def run_agent_turn(
                     sequence += 1
 
                     try:
-                        result = await execute_tool(block.name, tool_input)
+                        result = await execute_tool(block["name"], tool_input)
                         if tool_trace:
                             tool_trace._chunks = [result[:200]]
                             tool_trace.complete()
@@ -180,24 +224,23 @@ async def run_agent_turn(
 
                     yield {
                         "type": "tool_end",
-                        "tool_name": block.name,
+                        "tool_name": block["name"],
                         "tool_result": result[:600],
                     }
 
                     tool_results.append({
                         "type": "tool_result",
-                        "tool_use_id": block.id,
+                        "tool_use_id": block["id"],
                         "content": result,
                     })
 
                 current_messages = current_messages + [
-                    {"role": "assistant", "content": list(response.content)},
+                    {"role": "assistant", "content": content_blocks},
                     {"role": "user", "content": tool_results},
                 ]
                 continue
 
-            # Unexpected stop reason
-            logger.warning("Unexpected stop_reason: %s", response.stop_reason)
+            logger.warning("Unexpected stop_reason: %s", stop_reason)
             break
 
         if root_trace:

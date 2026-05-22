@@ -16,6 +16,7 @@ interface ChatMainProps {
   isLoadingMessages: boolean
   isConnected: boolean
   sendChatMessage: (message: string) => void
+  stopGeneration: () => void
   messagesEndRef: React.RefObject<HTMLDivElement>
 }
 
@@ -29,6 +30,7 @@ export default function ChatMain({
   isLoadingMessages,
   isConnected,
   sendChatMessage,
+  stopGeneration,
   messagesEndRef,
 }: ChatMainProps) {
   const hasMessages = messages.length > 0 || (isStreaming && !!streamingContent) || toolCalls.length > 0
@@ -64,6 +66,7 @@ export default function ChatMain({
         messagesEndRef={messagesEndRef}
         onSuggestionClick={sendChatMessage}
         onSend={sendChatMessage}
+        onStop={stopGeneration}
         isConnected={isConnected}
       />
 
@@ -71,6 +74,7 @@ export default function ChatMain({
       {hasMessages && (
         <ChatInput
           onSend={sendChatMessage}
+          onStop={stopGeneration}
           isStreaming={isStreaming}
           isConnected={isConnected}
         />

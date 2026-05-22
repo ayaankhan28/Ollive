@@ -29,6 +29,7 @@ export default function ChatInterface() {
         isLoadingMessages={chat.isLoadingMessages}
         isConnected={chat.isConnected}
         sendChatMessage={chat.sendChatMessage}
+        stopGeneration={chat.stopGeneration}
         messagesEndRef={chat.messagesEndRef}
       />
     </div>

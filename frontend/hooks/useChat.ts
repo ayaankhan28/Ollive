@@ -79,8 +79,11 @@ export function useChat() {
         }
 
         case 'chunk': {
-          store.appendStreamingContent(msg.content)
-          scrollToBottom()
+          // Guard against late chunks arriving after stop was pressed
+          if (useChatStore.getState().isStreaming) {
+            store.appendStreamingContent(msg.content)
+            scrollToBottom()
+          }
           break
         }
 
@@ -137,6 +140,21 @@ export function useChat() {
           const { tool_name, tool_result } = msg
           useChatStore.getState().completeToolCall(tool_name, tool_result)
           scrollToBottom()
+          break
+        }
+
+        case 'stopped': {
+          // Backend confirmed cancellation — state already cleaned up by stopGeneration,
+          // but re-sort sessions so the active session bubbles to the top.
+          const stoppedState = useChatStore.getState()
+          const stoppedSessions = [...stoppedState.sessions]
+          const stoppedIdx = stoppedSessions.findIndex((s) => s.id === msg.session_id)
+          if (stoppedIdx > 0) {
+            const [session] = stoppedSessions.splice(stoppedIdx, 1)
+            session.updated_at = new Date().toISOString()
+            stoppedSessions.unshift(session)
+            stoppedState.setSessions(stoppedSessions)
+          }
           break
         }
 
@@ -278,6 +296,29 @@ export function useChat() {
     [sendMessage, scrollToBottom]
   )
 
+  const stopGeneration = useCallback(() => {
+    const currentStore = useChatStore.getState()
+    if (!currentStore.isStreaming) return
+
+    // Immediately finalize whatever was received so far
+    const partialContent = currentStore.streamingContent
+    if (partialContent) {
+      const assistantMessage: Message = {
+        session_id: currentStore.activeSessionId || '',
+        role: 'assistant',
+        content: partialContent,
+        created_at: new Date().toISOString(),
+      }
+      currentStore.addMessage(assistantMessage)
+    }
+    currentStore.clearStreamingContent()
+    currentStore.setIsStreaming(false)
+    currentStore.clearToolCalls()
+
+    // Tell backend to stop the LLM generation
+    sendMessage({ type: 'stop' })
+  }, [sendMessage])
+
   const deleteSession = useCallback(
     async (sessionId: string) => {
       try {
@@ -324,6 +365,7 @@ export function useChat() {
     selectSession,
     startNewChat,
     sendChatMessage,
+    stopGeneration,
     deleteSession,
     renameSession,
 

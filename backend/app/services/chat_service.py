@@ -16,6 +16,7 @@ async def process_chat_message(
     user_id: uuid.UUID,
     message: str,
     session_id: Optional[uuid.UUID] = None,
+    cancel_event=None,
 ) -> AsyncIterator[Dict[str, Any]]:
     """
     Process a chat message through the agentic loop and yield WebSocket events:
@@ -79,18 +80,22 @@ async def process_chat_message(
             session_id=str(session.id),
             user_id=str(user_id),
             conversation_id=str(user_msg.id) if user_msg else None,
+            cancel_event=cancel_event,
         ):
             if event["type"] == "chunk":
                 full_response += event["content"]
             yield event
 
-        # 7. Save assistant response
+        # 7. Save assistant response (partial if stopped)
         if full_response:
             await session_service.add_message(db, session.id, user_id, "assistant", full_response)
             await session_service.update_session_updated_at(db, session.id)
             await db.commit()
 
-        yield {"type": "done", "session_id": str(session.id)}
+        if cancel_event and cancel_event.is_set():
+            yield {"type": "stopped", "session_id": str(session.id)}
+        else:
+            yield {"type": "done", "session_id": str(session.id)}
 
     except Exception as e:
         logger.error("process_chat_message error: %s", e, exc_info=True)

@@ -36,6 +36,7 @@ export type WSMessageType =
   | { type: 'session_title'; session_id: string; title: string }
   | { type: 'chunk'; content: string }
   | { type: 'done'; session_id: string }
+  | { type: 'stopped'; session_id: string }
   | { type: 'error'; error: string }
   | { type: 'tool_start'; tool_name: string; tool_input: Record<string, unknown> }
   | { type: 'tool_end'; tool_name: string; tool_result: string }

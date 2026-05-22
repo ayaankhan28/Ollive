@@ -1,10 +1,10 @@
+import asyncio
 import json
 import uuid
 import logging
 from typing import Optional
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.base import get_session_factory
 from app.services.chat_service import process_chat_message
@@ -22,22 +22,51 @@ async def websocket_chat_endpoint(
     WebSocket endpoint for streaming chat.
 
     Client sends:
-        {"type": "chat", "message": "...", "session_id": "uuid-or-null", "user_id": "uuid"}
+        {"type": "chat",  "message": "...", "session_id": "uuid-or-null", "user_id": "uuid"}
+        {"type": "stop"}  — cancels the active generation
 
     Server streams back:
         {"type": "session_info", "session_id": "uuid", "title": "..."}
-        {"type": "chunk", "content": "..."}
-        {"type": "done", "session_id": "uuid"}
-        {"type": "error", "error": "..."}
+        {"type": "chunk",        "content": "..."}
+        {"type": "done",         "session_id": "uuid"}
+        {"type": "stopped",      "session_id": "uuid"}
+        {"type": "error",        "error": "..."}
     """
     await websocket.accept()
     logger.info(f"WebSocket connected: client_id={client_id}")
 
     session_factory = get_session_factory()
+    cancel_event = asyncio.Event()
+
+    async def stream_response(
+        user_id: uuid.UUID,
+        session_id: Optional[uuid.UUID],
+        message_text: str,
+    ):
+        async with session_factory() as db:
+            try:
+                async for event in process_chat_message(
+                    db=db,
+                    user_id=user_id,
+                    message=message_text,
+                    session_id=session_id,
+                    cancel_event=cancel_event,
+                ):
+                    try:
+                        await websocket.send_text(json.dumps(event))
+                    except Exception:
+                        return
+            except WebSocketDisconnect:
+                return
+            except Exception as e:
+                logger.error(f"Error processing chat for client {client_id}: {e}", exc_info=True)
+                try:
+                    await websocket.send_text(json.dumps({"type": "error", "error": str(e)}))
+                except Exception:
+                    pass
 
     try:
         while True:
-            # Wait for a message from the client
             raw_data = await websocket.receive_text()
 
             try:
@@ -49,14 +78,14 @@ async def websocket_chat_endpoint(
                 continue
 
             msg_type = data.get("type")
+
+            if msg_type == "stop":
+                cancel_event.set()
+                continue
+
             if msg_type != "chat":
                 await websocket.send_text(
-                    json.dumps(
-                        {
-                            "type": "error",
-                            "error": f"Unknown message type: {msg_type}",
-                        }
-                    )
+                    json.dumps({"type": "error", "error": f"Unknown message type: {msg_type}"})
                 )
                 continue
 
@@ -67,7 +96,6 @@ async def websocket_chat_endpoint(
                 )
                 continue
 
-            # Parse user_id
             user_id_str = data.get("user_id")
             if not user_id_str:
                 await websocket.send_text(
@@ -83,7 +111,6 @@ async def websocket_chat_endpoint(
                 )
                 continue
 
-            # Parse optional session_id
             session_id: Optional[uuid.UUID] = None
             session_id_str = data.get("session_id")
             if session_id_str:
@@ -97,39 +124,17 @@ async def websocket_chat_endpoint(
                 f"session={session_id}, client={client_id}"
             )
 
-            # Process the message and stream events back
-            async with session_factory() as db:
-                try:
-                    async for event in process_chat_message(
-                        db=db,
-                        user_id=user_id,
-                        message=message_text,
-                        session_id=session_id,
-                    ):
-                        await websocket.send_text(json.dumps(event))
-                except WebSocketDisconnect:
-                    logger.info(
-                        f"Client {client_id} disconnected during streaming"
-                    )
-                    return
-                except Exception as e:
-                    logger.error(
-                        f"Error processing chat for client {client_id}: {e}",
-                        exc_info=True,
-                    )
-                    try:
-                        await websocket.send_text(
-                            json.dumps({"type": "error", "error": str(e)})
-                        )
-                    except Exception:
-                        pass
+            # Reset cancel flag and start streaming as a background task so
+            # we can receive a "stop" message while streaming is in progress.
+            cancel_event.clear()
+            asyncio.create_task(stream_response(user_id, session_id, message_text))
 
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected: client_id={client_id}")
+        cancel_event.set()
     except Exception as e:
-        logger.error(
-            f"Unexpected WebSocket error for client {client_id}: {e}", exc_info=True
-        )
+        logger.error(f"Unexpected WebSocket error for client {client_id}: {e}", exc_info=True)
+        cancel_event.set()
         try:
             await websocket.send_text(
                 json.dumps({"type": "error", "error": "Internal server error"})

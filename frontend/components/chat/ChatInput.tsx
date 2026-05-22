@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 
 interface ChatInputProps {
   onSend: (message: string) => void
+  onStop?: () => void
   isStreaming: boolean
   isConnected: boolean
   variant?: 'bar' | 'pill'
@@ -13,6 +14,7 @@ interface ChatInputProps {
 
 export default function ChatInput({
   onSend,
+  onStop,
   isStreaming,
   isConnected,
   variant = 'bar',
@@ -99,16 +101,16 @@ export default function ChatInput({
           </button>
         )}
         <button
-          onClick={handleSend}
+          onClick={isStreaming ? onStop : handleSend}
           type="button"
           disabled={!canSend && !isStreaming}
-          title={canSend ? 'Send (Enter)' : isStreaming ? 'Responding…' : 'Type a message'}
+          title={canSend ? 'Send (Enter)' : isStreaming ? 'Stop generation' : 'Type a message'}
           className={cn(
             'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-150',
             canSend
               ? 'bg-white text-black hover:bg-white/90 active:scale-95'
               : isStreaming
-              ? 'bg-white/15 text-white/60 cursor-not-allowed'
+              ? 'bg-white/20 text-white cursor-pointer hover:bg-white/30 active:scale-95'
               : 'bg-[#2a2a2a] text-white/20 cursor-not-allowed'
           )}
         >
