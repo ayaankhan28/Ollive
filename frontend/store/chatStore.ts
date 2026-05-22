@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { User, Session, Message } from '@/lib/types'
+import type { User, Session, Message, ToolCall } from '@/lib/types'
 
 interface ChatStore {
   // User state
@@ -27,6 +27,12 @@ interface ChatStore {
   setStreamingContent: (v: string) => void
   appendStreamingContent: (v: string) => void
   clearStreamingContent: () => void
+
+  // Tool calls (active during a streaming agent turn)
+  toolCalls: ToolCall[]
+  addToolCall: (call: ToolCall) => void
+  completeToolCall: (tool_name: string, result: string) => void
+  clearToolCalls: () => void
 
   // Loading states
   isLoadingSessions: boolean
@@ -56,8 +62,7 @@ export const useChatStore = create<ChatStore>((set) => ({
   removeSession: (id) =>
     set((state) => ({
       sessions: state.sessions.filter((s) => s.id !== id),
-      activeSessionId:
-        state.activeSessionId === id ? null : state.activeSessionId,
+      activeSessionId: state.activeSessionId === id ? null : state.activeSessionId,
       messages: state.activeSessionId === id ? [] : state.messages,
     })),
 
@@ -65,9 +70,7 @@ export const useChatStore = create<ChatStore>((set) => ({
   messages: [],
   setMessages: (messages) => set({ messages }),
   addMessage: (message) =>
-    set((state) => ({
-      messages: [...state.messages, message],
-    })),
+    set((state) => ({ messages: [...state.messages, message] })),
 
   // Streaming state
   isStreaming: false,
@@ -77,6 +80,20 @@ export const useChatStore = create<ChatStore>((set) => ({
   appendStreamingContent: (v) =>
     set((state) => ({ streamingContent: state.streamingContent + v })),
   clearStreamingContent: () => set({ streamingContent: '' }),
+
+  // Tool calls
+  toolCalls: [],
+  addToolCall: (call) =>
+    set((state) => ({ toolCalls: [...state.toolCalls, call] })),
+  completeToolCall: (tool_name, result) =>
+    set((state) => ({
+      toolCalls: state.toolCalls.map((c) =>
+        c.tool_name === tool_name && c.status === 'running'
+          ? { ...c, status: 'done', tool_result: result, completed_at: new Date().toISOString() }
+          : c
+      ),
+    })),
+  clearToolCalls: () => set({ toolCalls: [] }),
 
   // Loading states
   isLoadingSessions: false,

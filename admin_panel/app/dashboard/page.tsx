@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { getSummary, getTraces } from '@/lib/api'
 import { Trace } from '@/lib/types'
 import { Clock3, Minus } from 'lucide-react'
+import LiveTraceFeed from '@/components/LiveTraceFeed'
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -299,45 +300,9 @@ export default async function DashboardPage() {
           </div>
         </div>
 
-        {/* ── Right activity panel ── */}
-        <div className="w-[260px] shrink-0 border-l border-[#1a1a1a] flex flex-col">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-[#1a1a1a]">
-            <span className="text-[12px] font-medium text-[#888]">Activity</span>
-            <button className="text-[#333] hover:text-[#666]">
-              <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
-                <path d="M1 3h10M3 6h6M5 9h2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" fill="none"/>
-              </svg>
-            </button>
-          </div>
-          <div className="flex-1 overflow-y-auto">
-            {recentTraces.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-32 text-[11px] text-[#333]">
-                No activity yet.
-              </div>
-            ) : (
-              <div className="py-2">
-                {recentTraces.slice(0, 30).map((t) => (
-                  <Link
-                    key={t.trace_id}
-                    href={`/dashboard/traces/${t.trace_id}`}
-                    className="flex items-start gap-2.5 px-4 py-2.5 hover:bg-white/[0.02] transition-colors group"
-                  >
-                    <div className="w-[6px] h-[6px] rounded-full mt-[3px] shrink-0" style={{ background: statusColor(t.status) }} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-1 mb-0.5">
-                        <span className="text-[10px] font-mono text-[#666] truncate">{t.trace_id.slice(0, 10)}…</span>
-                        <Clock3 className="w-2.5 h-2.5 text-[#333] shrink-0" />
-                      </div>
-                      <div className="text-[10px] text-[#444] capitalize">{t.provider} · {fmtMs(t.latency_ms)}</div>
-                      {t.total_tokens && (
-                        <div className="text-[9px] font-mono text-[#333] mt-0.5">{t.total_tokens} tokens</div>
-                      )}
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
+        {/* ── Right: live SSE feed ── */}
+        <div className="w-[260px] shrink-0 border-l border-[#1a1a1a] p-3">
+          <LiveTraceFeed />
         </div>
       </div>
     </div>

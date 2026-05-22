@@ -4,7 +4,7 @@ import { ChevronDown } from 'lucide-react'
 import ChatWindow from './ChatWindow'
 import ChatInput from './ChatInput'
 import { cn } from '@/lib/utils'
-import type { Message, Session } from '@/lib/types'
+import type { Message, Session, ToolCall } from '@/lib/types'
 
 interface ChatMainProps {
   sessions: Session[]
@@ -12,6 +12,7 @@ interface ChatMainProps {
   messages: Message[]
   isStreaming: boolean
   streamingContent: string
+  toolCalls: ToolCall[]
   isLoadingMessages: boolean
   isConnected: boolean
   sendChatMessage: (message: string) => void
@@ -24,12 +25,13 @@ export default function ChatMain({
   messages,
   isStreaming,
   streamingContent,
+  toolCalls,
   isLoadingMessages,
   isConnected,
   sendChatMessage,
   messagesEndRef,
 }: ChatMainProps) {
-  const hasMessages = messages.length > 0 || (isStreaming && !!streamingContent)
+  const hasMessages = messages.length > 0 || (isStreaming && !!streamingContent) || toolCalls.length > 0
 
   return (
     <main className="flex-1 flex flex-col h-full min-w-0 bg-[#0d0d0d]">
@@ -57,6 +59,7 @@ export default function ChatMain({
         messages={messages}
         isStreaming={isStreaming}
         streamingContent={streamingContent}
+        toolCalls={toolCalls}
         isLoadingMessages={isLoadingMessages}
         messagesEndRef={messagesEndRef}
         onSuggestionClick={sendChatMessage}

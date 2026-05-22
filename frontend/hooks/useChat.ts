@@ -102,6 +102,7 @@ export function useChat() {
           }
           useChatStore.getState().clearStreamingContent()
           useChatStore.getState().setIsStreaming(false)
+          useChatStore.getState().clearToolCalls()
           scrollToBottom()
 
           // Re-sort sessions: bubble active to top
@@ -119,10 +120,31 @@ export function useChat() {
           break
         }
 
+        case 'tool_start': {
+          const { tool_name, tool_input } = msg
+          useChatStore.getState().addToolCall({
+            id: `${tool_name}-${Date.now()}`,
+            tool_name,
+            tool_input,
+            status: 'running',
+            started_at: new Date().toISOString(),
+          })
+          scrollToBottom()
+          break
+        }
+
+        case 'tool_end': {
+          const { tool_name, tool_result } = msg
+          useChatStore.getState().completeToolCall(tool_name, tool_result)
+          scrollToBottom()
+          break
+        }
+
         case 'error': {
           console.error('WS error from server:', msg.error)
           useChatStore.getState().clearStreamingContent()
           useChatStore.getState().setIsStreaming(false)
+          useChatStore.getState().clearToolCalls()
           break
         }
       }
@@ -293,6 +315,7 @@ export function useChat() {
     messages: store.messages,
     isStreaming: store.isStreaming,
     streamingContent: store.streamingContent,
+    toolCalls: store.toolCalls,
     isLoadingSessions: store.isLoadingSessions,
     isLoadingMessages: store.isLoadingMessages,
     isConnected,

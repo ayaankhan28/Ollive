@@ -1,8 +1,11 @@
+import asyncio
+import json
 import logging
 from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.base import get_db
@@ -69,3 +72,35 @@ async def get_sessions(
 @router.get("/analytics/sessions/{session_id}", response_model=SessionDetailResponse)
 async def get_session_detail(session_id: UUID, db: AsyncSession = Depends(get_db)):
     return await analytics_service.get_session_detail(db, session_id)
+
+
+@router.get("/events/traces")
+async def trace_event_stream():
+    """
+    Server-Sent Events endpoint. Admin panel subscribes here to receive
+    each new trace as it arrives, without polling.
+    """
+    from app.events import subscribe, unsubscribe
+
+    queue = subscribe()
+
+    async def generate():
+        try:
+            yield "event: connected\ndata: {}\n\n"
+            while True:
+                try:
+                    payload = await asyncio.wait_for(queue.get(), timeout=25)
+                    yield f"data: {json.dumps(payload)}\n\n"
+                except asyncio.TimeoutError:
+                    # Keep-alive ping so the connection stays open
+                    yield "event: ping\ndata: {}\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            unsubscribe(queue)
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

@@ -25,6 +25,7 @@ export default function ChatInterface() {
         messages={chat.messages}
         isStreaming={chat.isStreaming}
         streamingContent={chat.streamingContent}
+        toolCalls={chat.toolCalls}
         isLoadingMessages={chat.isLoadingMessages}
         isConnected={chat.isConnected}
         sendChatMessage={chat.sendChatMessage}

@@ -4,12 +4,14 @@ import { useEffect, useRef } from 'react'
 import { ImageIcon, PenLine, Globe } from 'lucide-react'
 import ChatMessage from './ChatMessage'
 import ChatInput from './ChatInput'
-import type { Message } from '@/lib/types'
+import ToolCallBubble from './ToolCallBubble'
+import type { Message, ToolCall } from '@/lib/types'
 
 interface ChatWindowProps {
   messages: Message[]
   isStreaming: boolean
   streamingContent: string
+  toolCalls: ToolCall[]
   isLoadingMessages: boolean
   messagesEndRef: React.RefObject<HTMLDivElement>
   onSuggestionClick: (prompt: string) => void
@@ -98,6 +100,7 @@ export default function ChatWindow({
   messages,
   isStreaming,
   streamingContent,
+  toolCalls,
   isLoadingMessages,
   messagesEndRef,
   onSuggestionClick,
@@ -148,6 +151,11 @@ export default function ChatWindow({
             />
           ))}
 
+          {/* Tool call steps — shown inline during agent execution */}
+          {toolCalls.map((call) => (
+            <ToolCallBubble key={call.id} call={call} />
+          ))}
+
           {isStreaming && streamingContent && (
             <ChatMessage
               message={{ session_id: '', role: 'assistant', content: streamingContent }}
@@ -156,7 +164,8 @@ export default function ChatWindow({
             />
           )}
 
-          {isStreaming && !streamingContent && (
+          {/* Thinking dots — only shown while waiting (no chunks and no tool calls yet) */}
+          {isStreaming && !streamingContent && toolCalls.length === 0 && (
             <div className="flex items-start gap-3 py-2 animate-[fade-in_0.2s_ease-out]">
               <div className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0 mt-0.5">
                 <span className="text-white text-[10px] font-bold">O</span>

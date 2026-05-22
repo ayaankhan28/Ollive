@@ -3,6 +3,7 @@ import { getTrace } from '@/lib/api'
 import { TraceDetail, TraceOut } from '@/lib/types'
 import { ArrowLeft } from 'lucide-react'
 import { notFound } from 'next/navigation'
+import LiveSpanTree from '@/components/LiveSpanTree'
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -192,13 +193,13 @@ export default async function TraceDetailPage({ params }: { params: Promise<{ id
           </div>
         </div>
 
-        {/* Tree — always shows root + all children, highlights activeId */}
+        {/* Live span tree — new child spans slide in via SSE */}
         <div className="flex-1 overflow-y-auto py-2 px-1">
-          <SpanTree root={rootTrace} activeId={activeId} />
+          <LiveSpanTree initialRoot={rootTrace} activeId={activeId} />
         </div>
 
         {/* Footer */}
-        <div className="border-t border-[#1a1a1a] px-3 py-2 flex items-center justify-between">
+        <div className="border-t border-[#1a1a1a] px-3 py-2 flex items-center justify-between shrink-0">
           <span className="text-[10px] text-[#444]">
             {1 + rootTrace.children.length} span{rootTrace.children.length !== 0 ? 's' : ''}
           </span>
