@@ -26,11 +26,11 @@ class Settings(BaseSettings):
     TAVILY_API_KEY: str = os.getenv("TAVILY_API_KEY", "")
 
     # Anthropic model config
-    ANTHROPIC_MODEL: str = "claude-sonnet-4-6"
+    ANTHROPIC_MODEL: str = "claude-sonnet-4-6--"
     ANTHROPIC_MAX_TOKENS: int = 8096
 
     # Gemini model config
-    GEMINI_MODEL: str = "gemini-2.0-flash"
+    GEMINI_MODEL: str = "gemini-2.5-flash"
     GEMINI_MAX_TOKENS: int = 8096
 
     class Config:

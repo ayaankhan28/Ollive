@@ -34,6 +34,10 @@ interface ChatStore {
   completeToolCall: (tool_name: string, result: string) => void
   clearToolCalls: () => void
 
+  // Ephemeral provider-fallback notice (not persisted)
+  providerFallback: { from: string; to: string; reason: string } | null
+  setProviderFallback: (v: { from: string; to: string; reason: string } | null) => void
+
   // Loading states
   isLoadingSessions: boolean
   setIsLoadingSessions: (v: boolean) => void
@@ -94,6 +98,10 @@ export const useChatStore = create<ChatStore>((set) => ({
       ),
     })),
   clearToolCalls: () => set({ toolCalls: [] }),
+
+  // Ephemeral provider-fallback notice
+  providerFallback: null,
+  setProviderFallback: (v) => set({ providerFallback: v }),
 
   // Loading states
   isLoadingSessions: false,

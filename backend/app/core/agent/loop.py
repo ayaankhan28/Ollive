@@ -8,6 +8,9 @@ Trace tree produced per agent turn:
     ├── tool.web_search  (span_type="tool", sequence=1)
     ├── tool.calculator  (span_type="tool", sequence=2)
     └── llm.anthropic  (span_type="generation", sequence=3)  ← final streamed response
+
+If Anthropic fails before yielding any events the entire turn is retried via
+the Gemini fallback loop (same tool-calling capability, same event schema).
 """
 
 import asyncio
@@ -19,7 +22,7 @@ import anthropic
 
 from app.core.config import settings
 from app.core.llm.manager import SYSTEM_PROMPT
-from app.core.tools import ANTHROPIC_TOOL_DEFS, execute_tool
+from app.core.tools import ANTHROPIC_TOOL_DEFS, GEMINI_TOOL_DEFS, execute_tool
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +39,187 @@ def _msg_preview(messages: List[Dict[str, Any]]) -> Optional[str]:
     return str(content)[:200] or None
 
 
+# ── Gemini fallback loop ───────────────────────────────────────────────────────
+
+async def _stream_gemini(
+    messages: List[Dict[str, Any]],
+    cancel_event: Optional[asyncio.Event],
+    root_trace: Any,
+    obs: Any,
+    session_id: Optional[str],
+    user_id: Optional[str],
+) -> AsyncIterator[Dict[str, Any]]:
+    """
+    Full agentic loop using Gemini — mirrors the Anthropic loop.
+
+    Yields the same WS event schema:
+      {"type": "chunk",      "content": "..."}
+      {"type": "tool_start", "tool_name": ..., "tool_input": {...}}
+      {"type": "tool_end",   "tool_name": ..., "tool_result": "..."}
+    """
+    if not settings.GEMINI_API_KEY:
+        raise RuntimeError("GEMINI_API_KEY not configured — cannot use Gemini fallback")
+    if GEMINI_TOOL_DEFS is None:
+        raise RuntimeError("google-genai not installed — cannot use Gemini fallback")
+
+    from google import genai
+    from google.genai import types as gtypes
+    from app.core.llm.gemini_provider import _to_gemini_contents
+
+    client = genai.Client(api_key=settings.GEMINI_API_KEY)
+    contents = _to_gemini_contents(messages)
+    config = gtypes.GenerateContentConfig(
+        max_output_tokens=settings.GEMINI_MAX_TOKENS,
+        system_instruction=SYSTEM_PROMPT,
+        tools=[GEMINI_TOOL_DEFS],
+    )
+    loop_obj = asyncio.get_running_loop()
+    sequence = 0
+
+    for _round in range(_MAX_TOOL_ROUNDS + 1):
+        if cancel_event and cancel_event.is_set():
+            return
+
+        gen_trace = obs.start_trace(
+            provider="gemini",
+            model=settings.GEMINI_MODEL,
+            name="llm.gemini",
+            span_type="generation",
+            parent_trace_id=root_trace.trace_id if root_trace else None,
+            sequence=sequence,
+            input_preview=_msg_preview(
+                [{"content": p.text} for c in contents
+                 for p in (c.parts or []) if p.text]
+            ),
+            session_id=session_id,
+            user_id=user_id,
+        ) if obs else None
+        sequence += 1
+
+        # Bridge sync Gemini iterator to async via a queue
+        queue: asyncio.Queue = asyncio.Queue()
+
+        def _sync_stream(q=queue, cts=list(contents), cfg=config):
+            try:
+                for chunk in client.models.generate_content_stream(
+                    model=settings.GEMINI_MODEL, contents=cts, config=cfg
+                ):
+                    loop_obj.call_soon_threadsafe(q.put_nowait, ("chunk", chunk))
+            except Exception as exc:
+                loop_obj.call_soon_threadsafe(q.put_nowait, ("error", exc))
+            finally:
+                loop_obj.call_soon_threadsafe(q.put_nowait, None)
+
+        loop_obj.run_in_executor(None, _sync_stream)
+
+        text_parts: List[str] = []
+        function_calls: List[Any] = []
+        cancelled_mid_stream = False
+
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            kind, val = item
+            if kind == "error":
+                if gen_trace:
+                    if text_parts:
+                        gen_trace._chunks = text_parts
+                    gen_trace.fail(val)
+                    gen_trace.emit_nowait()
+                raise val
+
+            chunk = val
+            if cancel_event and cancel_event.is_set():
+                cancelled_mid_stream = True
+                break
+
+            # Iterate parts directly — never call chunk.text because the SDK
+            # raises ValueError when the chunk contains function_call parts.
+            for candidate in (chunk.candidates or []):
+                for part in (getattr(candidate.content, "parts", None) or []):
+                    fc = getattr(part, "function_call", None)
+                    if fc and getattr(fc, "name", None):
+                        function_calls.append(fc)
+                    else:
+                        text = getattr(part, "text", None)
+                        if text:
+                            text_parts.append(text)
+                            yield {"type": "chunk", "content": text}
+
+        if cancelled_mid_stream:
+            if gen_trace:
+                if text_parts:
+                    gen_trace._chunks = text_parts
+                gen_trace.cancel()
+                gen_trace.emit_nowait()
+            if root_trace:
+                root_trace.cancel()
+            return
+
+        if gen_trace:
+            if text_parts:
+                gen_trace._chunks = text_parts
+            gen_trace.complete()
+            gen_trace.emit_nowait()
+
+        if not function_calls:
+            break  # end_turn equivalent — text was streamed above
+
+        # ── execute tools then loop ──────────────────────────────────────
+        model_parts: List[Any] = []
+        result_parts: List[Any] = []
+
+        for fc in function_calls:
+            tool_name = fc.name
+            tool_input = dict(fc.args) if fc.args else {}
+
+            yield {"type": "tool_start", "tool_name": tool_name, "tool_input": tool_input}
+
+            tool_trace = obs.start_trace(
+                provider="tool",
+                model=tool_name,
+                name=f"tool.{tool_name}",
+                span_type="tool",
+                parent_trace_id=root_trace.trace_id if root_trace else None,
+                sequence=sequence,
+                input_preview=str(tool_input)[:200],
+                session_id=session_id,
+                user_id=user_id,
+            ) if obs else None
+            sequence += 1
+
+            try:
+                result = await execute_tool(tool_name, tool_input)
+                if tool_trace:
+                    tool_trace._chunks = [result[:200]]
+                    tool_trace.complete()
+                    tool_trace.emit_nowait()
+            except Exception as tool_err:
+                result = f"Tool error: {tool_err}"
+                if tool_trace:
+                    tool_trace._chunks = [result[:200]]
+                    tool_trace.fail(tool_err)
+                    tool_trace.emit_nowait()
+
+            yield {"type": "tool_end", "tool_name": tool_name, "tool_result": result[:600]}
+
+            model_parts.append(gtypes.Part(function_call=fc))
+            result_parts.append(
+                gtypes.Part(
+                    function_response=gtypes.FunctionResponse(
+                        name=tool_name,
+                        response={"result": result},
+                    )
+                )
+            )
+
+        contents.append(gtypes.Content(role="model", parts=model_parts))
+        contents.append(gtypes.Content(role="user", parts=result_parts))
+
+
+# ── Public entry-point ─────────────────────────────────────────────────────────
+
 async def run_agent_turn(
     messages: List[Dict[str, Any]],
     session_id: Optional[str] = None,
@@ -44,11 +228,11 @@ async def run_agent_turn(
     cancel_event: Optional[asyncio.Event] = None,
 ) -> AsyncIterator[Dict[str, Any]]:
     """
-    Run one full agent turn (possibly multiple tool calls) and yield WS events:
+    Run one full agent turn (possibly multiple tool calls) and yield WS events.
 
-    - {"type": "tool_start", "tool_name": ..., "tool_input": {...}}
-    - {"type": "tool_end",   "tool_name": ..., "tool_result": "..."}
-    - {"type": "chunk",      "content": "..."}   (true streaming from LLM)
+    Tries Anthropic first. If Anthropic raises before any events are yielded
+    (e.g. API key invalid, rate-limit, connectivity), falls back to Gemini
+    transparently.
     """
     # ── Observability setup ──────────────────────────────────────────────────
     try:
@@ -77,9 +261,11 @@ async def run_agent_turn(
     client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
     current_messages = list(messages)
     sequence = 0
+    events_yielded = False  # tracks whether any chunk/tool event reached the caller
+    gen_trace = None         # kept in outer scope so fallback handler can emit it
 
     try:
-        for round_num in range(_MAX_TOOL_ROUNDS + 1):
+        for _round in range(_MAX_TOOL_ROUNDS + 1):
             if cancel_event and cancel_event.is_set():
                 return
 
@@ -96,9 +282,6 @@ async def run_agent_turn(
             ) if obs else None
             sequence += 1
 
-            # ── True streaming LLM call ──────────────────────────────────
-            # content_blocks accumulates the full response as dicts so we can
-            # pass them back for tool-use rounds without needing SDK objects.
             content_blocks: List[Dict[str, Any]] = []
             tool_json_parts: Dict[int, List[str]] = {}
             stop_reason: Optional[str] = None
@@ -135,6 +318,7 @@ async def run_agent_turn(
                             text = delta.text
                             if event.index < len(content_blocks):
                                 content_blocks[event.index]["text"] += text
+                            events_yielded = True
                             yield {"type": "chunk", "content": text}
                         elif delta.type == "input_json_delta":
                             if event.index in tool_json_parts:
@@ -150,28 +334,19 @@ async def run_agent_turn(
                             except Exception:
                                 content_blocks[idx]["input"] = {}
 
-                # Only fetch final message when the stream was fully consumed.
                 if not cancelled_mid_stream:
                     final_message = await stream.get_final_message()
                     stop_reason = final_message.stop_reason
 
             if cancelled_mid_stream:
-                # Emit the partial gen_trace as cancelled so the child span
-                # appears in the admin panel with whatever text arrived.
                 if gen_trace:
-                    partial_text = [
-                        b["text"] for b in content_blocks
-                        if b["type"] == "text" and b.get("text")
-                    ]
-                    if partial_text:
-                        gen_trace._chunks = partial_text
+                    partial = [b["text"] for b in content_blocks if b["type"] == "text" and b.get("text")]
+                    if partial:
+                        gen_trace._chunks = partial
                     gen_trace.cancel()
                     gen_trace.emit_nowait()
-
-                # Mark root cancelled so finally emits it with a completed_at.
                 if root_trace:
                     root_trace.cancel()
-
                 return
 
             # ── Tracing ──────────────────────────────────────────────────
@@ -192,11 +367,9 @@ async def run_agent_turn(
                 )
                 gen_trace.emit_nowait()
 
-            # ── end_turn: text was already streamed chunk by chunk above ──
             if stop_reason == "end_turn":
                 break
 
-            # ── tool_use: execute tools then loop ─────────────────────────
             if stop_reason == "tool_use":
                 tool_results: List[Dict[str, Any]] = []
 
@@ -206,11 +379,8 @@ async def run_agent_turn(
 
                     tool_input = block.get("input", {})
 
-                    yield {
-                        "type": "tool_start",
-                        "tool_name": block["name"],
-                        "tool_input": tool_input,
-                    }
+                    events_yielded = True
+                    yield {"type": "tool_start", "tool_name": block["name"], "tool_input": tool_input}
 
                     tool_trace = obs.start_trace(
                         provider="tool",
@@ -238,11 +408,8 @@ async def run_agent_turn(
                             tool_trace.fail(tool_err)
                             tool_trace.emit_nowait()
 
-                    yield {
-                        "type": "tool_end",
-                        "tool_name": block["name"],
-                        "tool_result": result[:600],
-                    }
+                    events_yielded = True
+                    yield {"type": "tool_end", "tool_name": block["name"], "tool_result": result[:600]}
 
                     tool_results.append({
                         "type": "tool_result",
@@ -262,11 +429,51 @@ async def run_agent_turn(
         if root_trace:
             root_trace.complete()
 
-    except Exception as e:
-        logger.error("Agent loop error: %s", e, exc_info=True)
-        if root_trace:
-            root_trace.fail(e)
-        raise
+    except Exception as anthropic_err:
+        if events_yielded:
+            # Partial stream already sent — can't restart cleanly
+            logger.error("Anthropic error mid-stream: %s", anthropic_err, exc_info=True)
+            if root_trace:
+                root_trace.fail(anthropic_err)
+            raise
+
+        # Emit the Anthropic gen_trace as a failed child span so the admin
+        # panel shows a separate trace entry for the Anthropic attempt.
+        if gen_trace:
+            gen_trace.fail(anthropic_err)
+            gen_trace.emit_nowait()
+
+        anthropic_reason = str(anthropic_err)
+        logger.warning(
+            "Anthropic failed before any output, falling back to Gemini: %s",
+            anthropic_reason,
+        )
+
+        # Tell the frontend a provider switch is happening (ephemeral — not persisted)
+        yield {
+            "type": "provider_fallback",
+            "from": "anthropic",
+            "to": "gemini",
+            "reason": anthropic_reason[:300],
+        }
+
+        try:
+            async for event in _stream_gemini(
+                messages, cancel_event, root_trace, obs, session_id, user_id
+            ):
+                yield event
+            if root_trace:
+                root_trace.complete()
+        except Exception as gemini_err:
+            logger.error("Gemini fallback also failed: %s", gemini_err, exc_info=True)
+            if root_trace:
+                root_trace.fail(gemini_err)
+            raise RuntimeError(
+                f"All LLM providers failed. "
+                f"Anthropic: {anthropic_reason}. "
+                f"Gemini: {gemini_err}"
+            ) from gemini_err
+
     finally:
         if obs and _active_trace_id is not None and _active_tok is not None:
             try:

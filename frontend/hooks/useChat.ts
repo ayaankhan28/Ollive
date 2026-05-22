@@ -122,6 +122,7 @@ export function useChat() {
           useChatStore.getState().clearStreamingContent()
           useChatStore.getState().setIsStreaming(false)
           useChatStore.getState().clearToolCalls()
+          useChatStore.getState().setProviderFallback(null)
           scrollToBottom()
 
           // Re-sort sessions: bubble active to top
@@ -159,6 +160,15 @@ export function useChat() {
           break
         }
 
+        case 'provider_fallback': {
+          useChatStore.getState().setProviderFallback({
+            from: msg.from,
+            to: msg.to,
+            reason: msg.reason,
+          })
+          break
+        }
+
         case 'stopped': {
           // Backend confirmed cancellation — state already cleaned up by stopGeneration,
           // but re-sort sessions so the active session bubbles to the top.
@@ -179,6 +189,7 @@ export function useChat() {
           useChatStore.getState().clearStreamingContent()
           useChatStore.getState().setIsStreaming(false)
           useChatStore.getState().clearToolCalls()
+          useChatStore.getState().setProviderFallback(null)
           break
         }
       }
@@ -348,6 +359,7 @@ export function useChat() {
     currentStore.clearStreamingContent()
     currentStore.setIsStreaming(false)
     currentStore.clearToolCalls()
+    currentStore.setProviderFallback(null)
 
     // Tell backend to stop the LLM generation
     sendMessage({ type: 'stop' })

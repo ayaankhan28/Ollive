@@ -30,6 +30,7 @@ async def process_chat_message(
       {"type": "error",         "error": "..."}
     """
     session: Optional[Session] = None
+    session_id_str: Optional[str] = None   # cached early — safe to use after rollback
     is_new_session = False
 
     try:
@@ -41,7 +42,10 @@ async def process_chat_message(
             await db.commit()
             is_new_session = True
 
-        yield {"type": "session_info", "session_id": str(session.id), "title": session.title}
+        # Cache as string immediately — ORM object may be expired after rollback
+        session_id_str = str(session.id)
+
+        yield {"type": "session_info", "session_id": session_id_str, "title": session.title}
 
         # 2. Save user message
         user_msg = await session_service.add_message(db, session.id, user_id, "user", message)
@@ -50,6 +54,8 @@ async def process_chat_message(
 
         # 3. Build conversation history for LLM (exclude role="tool" display rows)
         history = await session_service.get_all_conversation_history(db, session.id, limit=20)
+        # Re-cache in case commit expired the object
+        session_id_str = str(session.id)
         llm_messages = [
             {"role": c.role, "content": c.content}
             for c in history
@@ -65,14 +71,14 @@ async def process_chat_message(
                     updated = await session_service.update_session_title(db, session.id, user_id, new_title)
                     await db.commit()
                     if updated:
-                        yield {"type": "session_info", "session_id": str(session.id), "title": new_title}
+                        yield {"type": "session_info", "session_id": session_id_str, "title": new_title}
                 except Exception as e:
                     logger.warning("Title generation failed: %s", e)
 
         # 5. Set observe-me context vars so spans link to session/user
         try:
             import observe_me
-            observe_me.set_session_id(str(session.id))
+            observe_me.set_session_id(session_id_str)
             observe_me.set_user_id(str(user_id))
             observe_me.set_conversation_id(str(user_msg.id) if user_msg else None)
         except ImportError:
@@ -85,7 +91,7 @@ async def process_chat_message(
 
         async for event in run_agent_turn(
             messages=llm_messages,
-            session_id=str(session.id),
+            session_id=session_id_str,
             user_id=str(user_id),
             conversation_id=str(user_msg.id) if user_msg else None,
             cancel_event=cancel_event,
@@ -115,9 +121,9 @@ async def process_chat_message(
             await db.commit()
 
         if cancel_event and cancel_event.is_set():
-            yield {"type": "stopped", "session_id": str(session.id)}
+            yield {"type": "stopped", "session_id": session_id_str}
         else:
-            yield {"type": "done", "session_id": str(session.id)}
+            yield {"type": "done", "session_id": session_id_str}
 
     except Exception as e:
         logger.error("process_chat_message error: %s", e, exc_info=True)
@@ -126,8 +132,9 @@ async def process_chat_message(
         except Exception:
             pass
         yield {"type": "error", "error": str(e)}
-        if session:
-            yield {"type": "done", "session_id": str(session.id)}
+        if session_id_str:
+            # Use cached string — session ORM object is expired after rollback
+            yield {"type": "done", "session_id": session_id_str}
     finally:
         try:
             import observe_me

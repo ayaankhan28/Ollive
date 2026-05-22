@@ -1,10 +1,11 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { ImageIcon, PenLine, Globe } from 'lucide-react'
+import { ImageIcon, PenLine, Globe, AlertTriangle } from 'lucide-react'
 import ChatMessage from './ChatMessage'
 import ChatInput from './ChatInput'
 import ToolCallBubble from './ToolCallBubble'
+import { useChatStore } from '@/store/chatStore'
 import type { Message, ToolCall } from '@/lib/types'
 
 interface ChatWindowProps {
@@ -113,6 +114,7 @@ export default function ChatWindow({
   isConnected,
 }: ChatWindowProps) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const providerFallback = useChatStore((s) => s.providerFallback)
 
   useEffect(() => {
     const container = containerRef.current
@@ -179,6 +181,21 @@ export default function ChatWindow({
           {toolCalls.map((call) => (
             <ToolCallBubble key={call.id} call={call} />
           ))}
+
+          {/* Provider fallback nudge — ephemeral, shown only during active streaming */}
+          {isStreaming && providerFallback && (
+            <div className="flex items-start gap-3 py-1.5 animate-[fade-in_0.2s_ease-out]">
+              <div className="w-7 h-7 flex-shrink-0" />
+              <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[12px] text-amber-400/80">
+                <AlertTriangle size={12} className="shrink-0" />
+                <span>
+                  <span className="font-medium capitalize">{providerFallback.from}</span>
+                  {' unavailable — trying '}
+                  <span className="font-medium capitalize">{providerFallback.to}</span>
+                </span>
+              </div>
+            </div>
+          )}
 
           {isStreaming && streamingContent && (
             <ChatMessage

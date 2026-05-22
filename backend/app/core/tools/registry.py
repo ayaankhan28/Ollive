@@ -9,6 +9,23 @@ from .web_search import web_search
 
 logger = logging.getLogger(__name__)
 
+
+def _schema_to_gemini(s: dict):
+    """Recursively convert a JSON Schema dict to a google.genai types.Schema."""
+    from google.genai import types as gtypes
+    type_map = {
+        "object": "OBJECT", "string": "STRING", "integer": "INTEGER",
+        "number": "NUMBER", "boolean": "BOOLEAN", "array": "ARRAY",
+    }
+    kwargs: dict = {"type": type_map.get(str(s.get("type", "string")).lower(), "STRING")}
+    if "description" in s:
+        kwargs["description"] = s["description"]
+    if "properties" in s:
+        kwargs["properties"] = {k: _schema_to_gemini(v) for k, v in s["properties"].items()}
+    if "required" in s:
+        kwargs["required"] = s["required"]
+    return gtypes.Schema(**kwargs)
+
 # ── Anthropic tool definitions ────────────────────────────────────────────────
 
 ANTHROPIC_TOOL_DEFS = [
@@ -83,6 +100,27 @@ TOOL_REGISTRY: dict[str, Any] = {
     "calculator": _run_calculator,
     "get_datetime": _run_datetime,
 }
+
+
+def _build_gemini_tools():
+    """Convert ANTHROPIC_TOOL_DEFS to a Gemini Tool. Returns None if google-genai not installed."""
+    try:
+        from google.genai import types as gtypes
+        return gtypes.Tool(
+            function_declarations=[
+                gtypes.FunctionDeclaration(
+                    name=t["name"],
+                    description=t["description"],
+                    parameters=_schema_to_gemini(t["input_schema"]),
+                )
+                for t in ANTHROPIC_TOOL_DEFS
+            ]
+        )
+    except ImportError:
+        return None
+
+
+GEMINI_TOOL_DEFS = _build_gemini_tools()
 
 
 async def execute_tool(name: str, tool_input: dict) -> str:

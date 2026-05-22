@@ -37,6 +37,7 @@ export type WSMessageType =
   | { type: 'chunk'; content: string }
   | { type: 'done'; session_id: string }
   | { type: 'stopped'; session_id: string }
+  | { type: 'provider_fallback'; from: string; to: string; reason: string }
   | { type: 'error'; error: string }
   | { type: 'tool_start'; tool_name: string; tool_input: Record<string, unknown> }
   | { type: 'tool_end'; tool_name: string; tool_result: string }
