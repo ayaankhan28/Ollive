@@ -7,33 +7,35 @@ import {
   AlertTriangle,
   BarChart3,
   ChevronDown,
-  CreditCard,
+  GitBranch,
   HelpCircle,
   LayoutGrid,
   MessageSquare,
   Settings,
-  Zap,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 
 const nav = [
-  { href: '/dashboard',          label: 'Overview',    icon: Activity,      dot: true },
-  { href: '/dashboard/traces',   label: 'Traces',      icon: Zap },
+  { href: '/dashboard',          label: 'Overview',  icon: Activity,      dot: true },
+  { href: '/dashboard/sessions', label: 'Sessions',  icon: MessageSquare },
+  { href: '/dashboard/traces',   label: 'Traces',    icon: GitBranch },
   { href: '/dashboard/traces?status=error', label: 'Failures', icon: AlertTriangle },
-  { href: '/dashboard/metrics',  label: 'Metrics',     icon: BarChart3 },
+  { href: '/dashboard/metrics',  label: 'Metrics',   icon: BarChart3 },
 ]
 
 const workspace = [
-  { href: '/dashboard/sessions', label: 'Sessions',    icon: MessageSquare },
-  { href: '#',                   label: 'Settings',    icon: Settings },
-  { href: '#',                   label: 'Help',        icon: HelpCircle },
+  { href: '#', label: 'Settings', icon: Settings },
+  { href: '#', label: 'Help',     icon: HelpCircle },
 ]
 
-function NavItem({ href, label, icon: Icon, dot, badge }: {
+function NavItem({
+  href, label, icon: Icon, dot, badge,
+}: {
   href: string; label: string; icon: React.ElementType; dot?: boolean; badge?: string
 }) {
   const pathname = usePathname()
-  const active = pathname === href || (href !== '/dashboard' && !href.includes('?') && pathname.startsWith(href))
+  const active = pathname === href
+    || (href !== '/dashboard' && !href.includes('?') && pathname.startsWith(href))
 
   return (
     <Link
@@ -52,7 +54,9 @@ function NavItem({ href, label, icon: Icon, dot, badge }: {
       <div className="flex items-center gap-1.5">
         {dot && <span className="w-[6px] h-[6px] rounded-full bg-emerald-400" />}
         {badge && (
-          <span className="text-[10px] text-[#444] bg-white/[0.06] px-1.5 py-0.5 rounded-[4px] font-mono">{badge}</span>
+          <span className="text-[10px] text-[#444] bg-white/[0.06] px-1.5 py-0.5 rounded-[4px] font-mono">
+            {badge}
+          </span>
         )}
       </div>
     </Link>
@@ -83,7 +87,7 @@ export default function Sidebar() {
       {/* Primary nav */}
       <nav className="px-2 pt-3 pb-1 space-y-0.5">
         {nav.map((item) => (
-          <NavItem key={item.href} {...item} />
+          <NavItem key={item.href + item.label} {...item} />
         ))}
       </nav>
 
@@ -93,11 +97,10 @@ export default function Sidebar() {
       </div>
       <nav className="px-2 space-y-0.5">
         {workspace.map((item) => (
-          <NavItem key={item.href} {...item} />
+          <NavItem key={item.href + item.label} {...item} />
         ))}
       </nav>
 
-      {/* Spacer */}
       <div className="flex-1" />
 
       {/* User footer */}

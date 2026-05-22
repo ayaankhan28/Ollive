@@ -1,5 +1,6 @@
 import type {
   MetricsResponse,
+  SessionDetailResponse,
   SessionListResponse,
   SummaryResponse,
   TraceDetail,
@@ -35,6 +36,7 @@ export async function getTraces(params: {
   user_id?: string
   status?: string
   provider?: string
+  roots_only?: boolean
 } = {}): Promise<TraceListResponse> {
   const q = new URLSearchParams()
   if (params.page) q.set('page', String(params.page))
@@ -43,6 +45,8 @@ export async function getTraces(params: {
   if (params.user_id) q.set('user_id', params.user_id)
   if (params.status) q.set('status', params.status)
   if (params.provider) q.set('provider', params.provider)
+  // Default true — child spans appear in trace detail view, not in the list
+  q.set('roots_only', String(params.roots_only ?? true))
   return get(`/analytics/traces?${q}`)
 }
 
@@ -56,4 +60,8 @@ export async function getMetrics(hours = 24): Promise<MetricsResponse> {
 
 export async function getSessions(page = 1, limit = 20): Promise<SessionListResponse> {
   return get(`/analytics/sessions?page=${page}&limit=${limit}`)
+}
+
+export async function getSessionDetail(sessionId: string): Promise<SessionDetailResponse> {
+  return get(`/analytics/sessions/${sessionId}`)
 }

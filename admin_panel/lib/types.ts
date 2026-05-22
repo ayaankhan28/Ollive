@@ -9,6 +9,10 @@ export interface StreamEvent {
 export interface Trace {
   id: string
   trace_id: string
+  name: string | null
+  span_type: 'trace' | 'generation' | 'tool' | 'span'
+  parent_trace_id: string | null
+  sequence: number
   provider: string
   model: string
   status: 'pending' | 'success' | 'error' | 'cancelled'
@@ -34,6 +38,7 @@ export interface Trace {
 
 export interface TraceDetail extends Trace {
   stream_events: StreamEvent[]
+  children: Trace[]
 }
 
 export interface TraceListResponse {
@@ -94,4 +99,12 @@ export interface SessionAnalytics {
 export interface SessionListResponse {
   sessions: SessionAnalytics[]
   total: number
+}
+
+export interface SessionDetailResponse {
+  session_id: string
+  turns: TraceDetail[]      // root agent-turns, oldest first, each with .children
+  total_turns: number
+  total_tokens: number
+  total_cost_usd: number
 }
