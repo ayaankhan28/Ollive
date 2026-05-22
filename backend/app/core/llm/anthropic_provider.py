@@ -1,5 +1,5 @@
 import logging
-from typing import AsyncIterator, List, Dict
+from typing import AsyncIterator, List, Dict, Any
 
 import anthropic
 
@@ -10,54 +10,74 @@ logger = logging.getLogger(__name__)
 
 
 class AnthropicProvider(BaseLLMProvider):
+    """Anthropic Claude provider — pure LLM logic, no tracing concerns."""
+
     def __init__(self):
-        self._client = None
+        self._client: anthropic.AsyncAnthropic | None = None
 
     def _get_client(self) -> anthropic.AsyncAnthropic:
         if self._client is None:
-            self._client = anthropic.AsyncAnthropic(
-                api_key=settings.ANTHROPIC_API_KEY
-            )
+            self._client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
         return self._client
 
     @property
     def name(self) -> str:
         return "anthropic"
 
-    async def stream_chat(
-        self, messages: List[Dict], system: str = ""
-    ) -> AsyncIterator[str]:
-        client = self._get_client()
-        try:
-            kwargs = {
-                "model": "claude-sonnet-4-6",
-                "max_tokens": 8096,
-                "messages": messages,
-            }
-            if system:
-                kwargs["system"] = system
+    @property
+    def model(self) -> str:
+        return settings.ANTHROPIC_MODEL
 
+    @property
+    def max_tokens(self) -> int:
+        return settings.ANTHROPIC_MAX_TOKENS
+
+    async def _do_stream(
+        self, messages: List[Dict[str, Any]], system: str = ""
+    ) -> AsyncIterator[str]:
+        """Stream chat from Anthropic. Sets self._last_usage after completion."""
+        client = self._get_client()
+        kwargs: Dict[str, Any] = {
+            "model": settings.ANTHROPIC_MODEL,
+            "max_tokens": settings.ANTHROPIC_MAX_TOKENS,
+            "messages": messages,
+        }
+        if system:
+            kwargs["system"] = system
+
+        try:
             async with client.messages.stream(**kwargs) as stream:
                 async for text in stream.text_stream:
                     yield text
+
+                # Still inside context manager — capture usage for @trace_llm
+                try:
+                    final = await stream.get_final_message()
+                    self._last_usage = (
+                        final.usage.input_tokens,
+                        final.usage.output_tokens,
+                    )
+                except Exception:
+                    pass  # Usage is optional; trace is still recorded
+
         except anthropic.APIConnectionError as e:
-            logger.error(f"Anthropic connection error: {e}")
+            logger.error("Anthropic connection error: %s", e)
             raise
         except anthropic.RateLimitError as e:
-            logger.error(f"Anthropic rate limit error: {e}")
+            logger.error("Anthropic rate limit: %s", e)
             raise
         except anthropic.APIStatusError as e:
-            logger.error(f"Anthropic API status error: {e.status_code} - {e.message}")
+            logger.error("Anthropic API error %s: %s", e.status_code, e.message)
             raise
         except Exception as e:
-            logger.error(f"Unexpected error from Anthropic: {e}")
+            logger.error("Unexpected Anthropic error: %s", e)
             raise
 
     async def generate_title(self, first_message: str) -> str:
         client = self._get_client()
         try:
             response = await client.messages.create(
-                model="claude-sonnet-4-6",
+                model=settings.ANTHROPIC_MODEL,
                 max_tokens=32,
                 system=(
                     "Generate a very short title (3-5 words) for a chat conversation "
@@ -67,12 +87,8 @@ class AnthropicProvider(BaseLLMProvider):
                 messages=[{"role": "user", "content": first_message}],
             )
             title = response.content[0].text.strip().strip('"').strip("'")
-            # Truncate to reasonable length
-            if len(title) > 60:
-                title = title[:57] + "..."
-            return title
+            return title[:57] + "..." if len(title) > 60 else title
         except Exception as e:
-            logger.error(f"Error generating title with Anthropic: {e}")
-            # Return a fallback title based on the first few words
+            logger.error("Anthropic title generation failed: %s", e)
             words = first_message.split()[:4]
             return " ".join(words) if words else "New Chat"

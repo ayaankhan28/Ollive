@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from .context import get_context
+from .context import get_context, get_active_trace_id
 from .emitter import TelemetryEmitter
 from .tracer import Trace
 
@@ -13,27 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class ObserveMeClient:
-    """
-    Central SDK client.
-
-    Usage::
-
-        client = ObserveMeClient(endpoint="http://localhost:8001")
-        await client.start()   # call on app startup
-
-        trace = client.start_trace(provider="anthropic", model="claude-sonnet-4-6")
-        ...
-        trace.emit_nowait()
-
-        await client.stop()    # call on app shutdown
-    """
-
-    def __init__(
-        self,
-        endpoint: str,
-        api_key: Optional[str] = None,
-        enabled: bool = True,
-    ) -> None:
+    def __init__(self, endpoint: str, api_key: Optional[str] = None, enabled: bool = True) -> None:
         self.endpoint = endpoint
         self.enabled = enabled
         self._emitter = TelemetryEmitter(endpoint=endpoint, api_key=api_key)
@@ -50,6 +30,10 @@ class ObserveMeClient:
         self,
         provider: str,
         model: str,
+        name: str = "",
+        span_type: str = "generation",
+        parent_trace_id: Optional[str] = None,
+        sequence: int = 0,
         session_id: Optional[str] = None,
         user_id: Optional[str] = None,
         conversation_id: Optional[str] = None,
@@ -57,17 +41,26 @@ class ObserveMeClient:
         max_tokens: Optional[int] = None,
         input_preview: Optional[str] = None,
     ) -> Trace:
-        """Create and return a new Trace. Enriches with context vars if not supplied."""
+        """Create a new Trace span. Reads context vars for session/user/conversation if not supplied.
+        Auto-parents to the currently active span if parent_trace_id is not given."""
         if session_id is None or user_id is None or conversation_id is None:
             ctx = get_context()
             session_id = session_id or ctx.get("session_id")
             user_id = user_id or ctx.get("user_id")
             conversation_id = conversation_id or ctx.get("conversation_id")
 
+        # Auto-parent to the active span if not explicitly set
+        if parent_trace_id is None:
+            parent_trace_id = get_active_trace_id()
+
         return Trace(
             client=self,
             provider=provider,
             model=model,
+            name=name,
+            span_type=span_type,
+            parent_trace_id=parent_trace_id,
+            sequence=sequence,
             session_id=session_id,
             user_id=user_id,
             conversation_id=conversation_id,

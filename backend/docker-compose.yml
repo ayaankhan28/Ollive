@@ -17,7 +17,9 @@ services:
       retries: 10
 
   backend:
-    build: .
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -25,11 +27,45 @@ services:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/ollive_chat
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
+      OBSERVE_ME_ENDPOINT: http://ingestion:8001
     volumes:
       - ./app:/app/app
     depends_on:
       db:
         condition: service_healthy
+      ingestion:
+        condition: service_started
+
+  ingestion:
+    build:
+      context: ..
+      dockerfile: ingestion_backend/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/ollive_chat
+    volumes:
+      - ../ingestion_backend/app:/app/app
+    depends_on:
+      db:
+        condition: service_healthy
+
+  admin:
+    image: node:20-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run dev"
+    ports:
+      - "3001:3001"
+    environment:
+      # Used by server-side Next.js (SSR inside Docker network)
+      INGESTION_URL: http://ingestion:8001
+      # Used by the browser (outside Docker, mapped port)
+      NEXT_PUBLIC_INGESTION_URL: http://localhost:8001
+    volumes:
+      - ../admin_panel:/app
+    depends_on:
+      - ingestion
 
 volumes:
   postgres_data:

@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 from contextlib import asynccontextmanager
 
@@ -16,14 +17,31 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+_observe_client = None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _observe_client
     logger.info("Starting up Ollive Chat Backend...")
     await init_db()
     logger.info("Database initialized successfully")
+
+    observe_endpoint = os.environ.get("OBSERVE_ME_ENDPOINT", "")
+    if observe_endpoint:
+        try:
+            import observe_me
+            _observe_client = observe_me.configure(endpoint=observe_endpoint, enabled=True)
+            await _observe_client.start()
+            logger.info("observe-me SDK started → %s", observe_endpoint)
+        except ImportError:
+            logger.warning("observe_me SDK not installed — telemetry disabled")
+
     yield
+
     logger.info("Shutting down Ollive Chat Backend...")
+    if _observe_client is not None:
+        await _observe_client.stop()
     await close_db()
     logger.info("Database connections closed")
 
@@ -35,7 +53,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
@@ -45,7 +62,6 @@ app.add_middleware(
 )
 
 
-# Request logging middleware
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     start_time = time.time()
@@ -58,7 +74,6 @@ async def log_requests(request: Request, call_next):
     return response
 
 
-# Include API router
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 

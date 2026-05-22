@@ -11,6 +11,7 @@ from app.schemas.analytics import (
     MetricsResponse,
     ProviderBreakdown,
     SessionAnalytics,
+    SessionDetailResponse,
     SessionListResponse,
     StatusBreakdown,
     SummaryResponse,
@@ -100,12 +101,17 @@ async def list_traces(
     user_id: Optional[UUID] = None,
     status: Optional[str] = None,
     provider: Optional[str] = None,
+    roots_only: bool = True,          # default: only show root agent-turn spans
 ) -> TraceListResponse:
     offset = (page - 1) * limit
     query = sa.select(Trace)
     count_query = sa.select(sa.func.count()).select_from(Trace)
 
     filters = []
+    if roots_only:
+        # Show only root traces — child spans (llm.anthropic, tool.*) are
+        # visible inside the trace detail view, not in the top-level list
+        filters.append(Trace.parent_trace_id.is_(None))
     if session_id:
         filters.append(Trace.session_id == session_id)
     if user_id:
@@ -138,7 +144,18 @@ async def get_trace(db: AsyncSession, trace_id: str) -> Optional[TraceDetail]:
     trace = result.scalar_one_or_none()
     if not trace:
         return None
-    return TraceDetail.model_validate(trace)
+
+    # Load child spans ordered by sequence then start time
+    children_result = await db.execute(
+        sa.select(Trace)
+        .where(Trace.parent_trace_id == trace_id)
+        .order_by(Trace.sequence, Trace.started_at)
+    )
+    children = children_result.scalars().all()
+
+    detail = TraceDetail.model_validate(trace)
+    detail.children = [TraceOut.model_validate(c) for c in children]
+    return detail
 
 
 async def get_metrics(db: AsyncSession, hours: int = 24) -> MetricsResponse:
@@ -211,3 +228,53 @@ async def get_sessions_analytics(db: AsyncSession, page: int = 1, limit: int = 2
         for r in rows
     ]
     return SessionListResponse(sessions=sessions, total=total)
+
+
+async def get_session_detail(db: AsyncSession, session_id: UUID) -> SessionDetailResponse:
+    """
+    Load all agent turns for a session with their child spans.
+    Two queries: roots ordered ASC (oldest first), then all children in one shot.
+    """
+    # 1. Root traces for this session, oldest → newest
+    roots_result = await db.execute(
+        sa.select(Trace)
+        .where(Trace.session_id == session_id, Trace.parent_trace_id.is_(None))
+        .order_by(Trace.started_at.asc(), Trace.created_at.asc())
+    )
+    roots = roots_result.scalars().all()
+
+    if not roots:
+        return SessionDetailResponse(
+            session_id=session_id, turns=[], total_turns=0,
+            total_tokens=0, total_cost_usd=0.0,
+        )
+
+    # 2. All child spans for those roots in one query
+    root_ids = [r.trace_id for r in roots]
+    children_result = await db.execute(
+        sa.select(Trace)
+        .where(Trace.parent_trace_id.in_(root_ids))
+        .order_by(Trace.sequence.asc(), Trace.started_at.asc())
+    )
+    children_by_parent: dict[str, list] = {}
+    for child in children_result.scalars().all():
+        children_by_parent.setdefault(child.parent_trace_id, []).append(child)
+
+    # 3. Assemble turns
+    turns = []
+    total_tokens = 0
+    total_cost = 0.0
+    for root in roots:
+        detail = TraceDetail.model_validate(root)
+        detail.children = [TraceOut.model_validate(c) for c in children_by_parent.get(root.trace_id, [])]
+        turns.append(detail)
+        total_tokens += root.total_tokens or 0
+        total_cost += float(root.estimated_cost_usd or 0)
+
+    return SessionDetailResponse(
+        session_id=session_id,
+        turns=turns,
+        total_turns=len(turns),
+        total_tokens=total_tokens,
+        total_cost_usd=total_cost,
+    )

@@ -8,6 +8,9 @@ _session_id: ContextVar[Optional[str]] = ContextVar("obs_session_id", default=No
 _user_id: ContextVar[Optional[str]] = ContextVar("obs_user_id", default=None)
 _conversation_id: ContextVar[Optional[str]] = ContextVar("obs_conversation_id", default=None)
 
+# Tracks the currently active trace so child spans are auto-parented
+_active_trace_id: ContextVar[Optional[str]] = ContextVar("obs_active_trace_id", default=None)
+
 
 def set_session_id(value: Optional[str]) -> None:
     _session_id.set(value)
@@ -19,6 +22,14 @@ def set_user_id(value: Optional[str]) -> None:
 
 def set_conversation_id(value: Optional[str]) -> None:
     _conversation_id.set(value)
+
+
+def set_active_trace_id(value: Optional[str]) -> None:
+    _active_trace_id.set(value)
+
+
+def get_active_trace_id() -> Optional[str]:
+    return _active_trace_id.get()
 
 
 def get_context() -> dict:
@@ -48,3 +59,13 @@ def trace_context(
     finally:
         for var, tok in reversed(resets):
             var.reset(tok)
+
+
+@contextmanager
+def active_span(trace_id: str):
+    """Context manager that sets trace_id as the active parent span."""
+    tok = _active_trace_id.set(trace_id)
+    try:
+        yield
+    finally:
+        _active_trace_id.reset(tok)

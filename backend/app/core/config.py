@@ -1,5 +1,6 @@
-from pydantic_settings import BaseSettings
 from typing import List
+
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -14,8 +15,19 @@ class Settings(BaseSettings):
     ]
 
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/ollive_chat"
+
+    # LLM provider credentials
     ANTHROPIC_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
+    TAVILY_API_KEY: str = "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"
+
+    # Anthropic model config
+    ANTHROPIC_MODEL: str = "claude-sonnet-4-6"
+    ANTHROPIC_MAX_TOKENS: int = 8096
+
+    # Gemini model config
+    GEMINI_MODEL: str = "gemini-2.0-flash"
+    GEMINI_MAX_TOKENS: int = 8096
 
     class Config:
         env_file = ".env"

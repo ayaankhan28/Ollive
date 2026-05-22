@@ -11,13 +11,16 @@ class StreamEventOut(BaseModel):
     content: Optional[str] = None
     latency_from_start_ms: Optional[int] = None
     timestamp: datetime
-
     model_config = {"from_attributes": True}
 
 
 class TraceOut(BaseModel):
     id: UUID
     trace_id: str
+    name: Optional[str] = None
+    span_type: str = "generation"
+    parent_trace_id: Optional[str] = None
+    sequence: int = 0
     provider: str
     model: str
     status: str
@@ -39,12 +42,12 @@ class TraceOut(BaseModel):
     error_type: Optional[str] = None
     error_message: Optional[str] = None
     created_at: datetime
-
     model_config = {"from_attributes": True}
 
 
 class TraceDetail(TraceOut):
     stream_events: list[StreamEventOut] = []
+    children: list[TraceOut] = []   # child spans ordered by sequence
 
 
 class TraceListResponse(BaseModel):
@@ -105,3 +108,12 @@ class SessionAnalytics(BaseModel):
 class SessionListResponse(BaseModel):
     sessions: list[SessionAnalytics]
     total: int
+
+
+class SessionDetailResponse(BaseModel):
+    """All agent turns for one session, with child spans included."""
+    session_id: UUID
+    turns: list[TraceDetail]       # root traces oldest → newest, each with .children
+    total_turns: int
+    total_tokens: int
+    total_cost_usd: float
