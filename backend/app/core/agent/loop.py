@@ -28,6 +28,35 @@ logger = logging.getLogger(__name__)
 
 _MAX_TOOL_ROUNDS = 5
 
+# ── Per-session provider failure tracking ─────────────────────────────────────
+# Maps session_id → {provider_name: consecutive_failure_count}.
+# If a provider accumulates ≥ _PROVIDER_FAILURE_THRESHOLD failures within a
+# session we skip it and route directly to the next working provider.
+_session_provider_failures: Dict[str, Dict[str, int]] = {}
+_PROVIDER_FAILURE_THRESHOLD = 2
+
+
+def _record_failure(session_id: Optional[str], provider: str) -> int:
+    """Increment failure count; return the new total."""
+    if not session_id:
+        return 0
+    counts = _session_provider_failures.setdefault(session_id, {})
+    counts[provider] = counts.get(provider, 0) + 1
+    logger.warning("Provider '%s' failure #%d for session %s", provider, counts[provider], session_id)
+    return counts[provider]
+
+
+def _record_success(session_id: Optional[str], provider: str) -> None:
+    """Reset failure count on success so a recovered provider can be retried."""
+    if session_id and session_id in _session_provider_failures:
+        _session_provider_failures[session_id].pop(provider, None)
+
+
+def _failures(session_id: Optional[str], provider: str) -> int:
+    if not session_id:
+        return 0
+    return _session_provider_failures.get(session_id, {}).get(provider, 0)
+
 
 def _msg_preview(messages: List[Dict[str, Any]]) -> Optional[str]:
     """Extract a string preview from the last message, regardless of content type."""
@@ -115,6 +144,8 @@ async def _stream_gemini(
         text_parts: List[str] = []
         function_calls: List[Any] = []
         cancelled_mid_stream = False
+        gemini_prompt_tokens: Optional[int] = None
+        gemini_completion_tokens: Optional[int] = None
 
         while True:
             item = await queue.get()
@@ -133,6 +164,16 @@ async def _stream_gemini(
             if cancel_event and cancel_event.is_set():
                 cancelled_mid_stream = True
                 break
+
+            # Extract token usage from every chunk — the final chunk carries the totals
+            usage = getattr(chunk, "usage_metadata", None)
+            if usage:
+                pt = getattr(usage, "prompt_token_count", None)
+                ct = getattr(usage, "candidates_token_count", None)
+                if pt:
+                    gemini_prompt_tokens = pt
+                if ct:
+                    gemini_completion_tokens = ct
 
             # Iterate parts directly — never call chunk.text because the SDK
             # raises ValueError when the chunk contains function_call parts.
@@ -160,7 +201,10 @@ async def _stream_gemini(
         if gen_trace:
             if text_parts:
                 gen_trace._chunks = text_parts
-            gen_trace.complete()
+            gen_trace.complete(
+                prompt_tokens=gemini_prompt_tokens,
+                completion_tokens=gemini_completion_tokens,
+            )
             gen_trace.emit_nowait()
 
         if not function_calls:
@@ -243,9 +287,15 @@ async def run_agent_turn(
         obs = None
         _active_trace_id = None
 
+    # Decide the active provider before creating the root trace so the admin
+    # panel shows the model that will actually answer, not the one that failed.
+    anthropic_over_threshold = _failures(session_id, "anthropic") >= _PROVIDER_FAILURE_THRESHOLD
+    _root_provider = "gemini" if anthropic_over_threshold else "anthropic"
+    _root_model    = settings.GEMINI_MODEL if anthropic_over_threshold else settings.ANTHROPIC_MODEL
+
     root_trace = obs.start_trace(
-        provider="anthropic",
-        model=settings.ANTHROPIC_MODEL,
+        provider=_root_provider,
+        model=_root_model,
         name="agent-turn",
         span_type="trace",
         session_id=session_id,
@@ -265,6 +315,32 @@ async def run_agent_turn(
     gen_trace = None         # kept in outer scope so fallback handler can emit it
 
     try:
+        # ── Route directly to Gemini when Anthropic is over-threshold ──────
+        # Must be inside try/finally so root_trace.emit_nowait() always fires.
+        if anthropic_over_threshold:
+            logger.info(
+                "Anthropic over threshold for session %s — routing silently to Gemini",
+                session_id,
+            )
+            # No provider_fallback nudge here — Gemini is already the established
+            # default for this session; there is no live switch to announce.
+            try:
+                async for event in _stream_gemini(
+                    messages, cancel_event, root_trace, obs, session_id, user_id
+                ):
+                    yield event
+                _record_success(session_id, "gemini")
+            except Exception as gemini_err:
+                _record_failure(session_id, "gemini")
+                if root_trace:
+                    root_trace.fail(gemini_err)
+                raise RuntimeError(
+                    f"All providers unavailable for this session: {gemini_err}"
+                ) from gemini_err
+            else:
+                if root_trace:
+                    root_trace.complete()
+            return  # finally still runs after return — root_trace.emit_nowait() fires
         for _round in range(_MAX_TOOL_ROUNDS + 1):
             if cancel_event and cancel_event.is_set():
                 return
@@ -426,6 +502,7 @@ async def run_agent_turn(
             logger.warning("Unexpected stop_reason: %s", stop_reason)
             break
 
+        _record_success(session_id, "anthropic")
         if root_trace:
             root_trace.complete()
 
@@ -433,6 +510,7 @@ async def run_agent_turn(
         if events_yielded:
             # Partial stream already sent — can't restart cleanly
             logger.error("Anthropic error mid-stream: %s", anthropic_err, exc_info=True)
+            _record_failure(session_id, "anthropic")
             if root_trace:
                 root_trace.fail(anthropic_err)
             raise
@@ -443,10 +521,11 @@ async def run_agent_turn(
             gen_trace.fail(anthropic_err)
             gen_trace.emit_nowait()
 
+        _record_failure(session_id, "anthropic")
         anthropic_reason = str(anthropic_err)
         logger.warning(
-            "Anthropic failed before any output, falling back to Gemini: %s",
-            anthropic_reason,
+            "Anthropic failed before any output (failures so far: %d), falling back to Gemini: %s",
+            _failures(session_id, "anthropic"), anthropic_reason,
         )
 
         # Tell the frontend a provider switch is happening (ephemeral — not persisted)
@@ -462,9 +541,11 @@ async def run_agent_turn(
                 messages, cancel_event, root_trace, obs, session_id, user_id
             ):
                 yield event
+            _record_success(session_id, "gemini")
             if root_trace:
                 root_trace.complete()
         except Exception as gemini_err:
+            _record_failure(session_id, "gemini")
             logger.error("Gemini fallback also failed: %s", gemini_err, exc_info=True)
             if root_trace:
                 root_trace.fail(gemini_err)
