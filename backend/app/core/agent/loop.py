@@ -156,6 +156,22 @@ async def run_agent_turn(
                     stop_reason = final_message.stop_reason
 
             if cancelled_mid_stream:
+                # Emit the partial gen_trace as cancelled so the child span
+                # appears in the admin panel with whatever text arrived.
+                if gen_trace:
+                    partial_text = [
+                        b["text"] for b in content_blocks
+                        if b["type"] == "text" and b.get("text")
+                    ]
+                    if partial_text:
+                        gen_trace._chunks = partial_text
+                    gen_trace.cancel()
+                    gen_trace.emit_nowait()
+
+                # Mark root cancelled so finally emits it with a completed_at.
+                if root_trace:
+                    root_trace.cancel()
+
                 return
 
             # ── Tracing ──────────────────────────────────────────────────
