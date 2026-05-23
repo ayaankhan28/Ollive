@@ -1,0 +1,95 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE: ghcr.io/${{ github.repository_owner }}/ollive-backend
+  INGESTION_IMAGE: ghcr.io/${{ github.repository_owner }}/ollive-ingestion
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tag }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set image tag
+        id: meta
+        run: echo "tag=sha-$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
+
+      - name: Build and push backend
+        uses: docker/build-push-action@v5
+        with:
+          context: .                        # repo root — gives access to sdk/
+          file: backend/Dockerfile
+          build-args: SDK_PATH=sdk          # sdk/ relative to repo root
+          push: true
+          tags: |
+            ${{ env.BACKEND_IMAGE }}:latest
+            ${{ env.BACKEND_IMAGE }}:${{ steps.meta.outputs.tag }}
+          cache-from: type=registry,ref=${{ env.BACKEND_IMAGE }}:latest
+          cache-to: type=inline
+
+      - name: Build and push ingestion
+        uses: docker/build-push-action@v5
+        with:
+          context: .                        # repo root
+          file: ingestion_backend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.INGESTION_IMAGE }}:latest
+            ${{ env.INGESTION_IMAGE }}:${{ steps.meta.outputs.tag }}
+          cache-from: type=registry,ref=${{ env.INGESTION_IMAGE }}:latest
+          cache-to: type=inline
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Update backend image
+        run: |
+          kubectl set image deployment/backend \
+            backend=${{ env.BACKEND_IMAGE }}:${{ needs.build-and-push.outputs.image_tag }} \
+            -n ollive
+
+      - name: Update ingestion image
+        run: |
+          kubectl set image deployment/ingestion \
+            ingestion=${{ env.INGESTION_IMAGE }}:${{ needs.build-and-push.outputs.image_tag }} \
+            -n ollive
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/backend -n ollive --timeout=120s
+          kubectl rollout status deployment/ingestion -n ollive --timeout=120s
+
+      - name: Verify pods
+        run: kubectl get pods -n ollive

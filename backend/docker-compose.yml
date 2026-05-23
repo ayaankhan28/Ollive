@@ -18,8 +18,10 @@ services:
 
   backend:
     build:
-      context: ..
+      context: ..          # repo root — gives Dockerfile access to sdk/
       dockerfile: backend/Dockerfile
+      args:
+        SDK_PATH: sdk      # relative to repo root context
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -53,7 +55,7 @@ services:
 
   ingestion:
     build:
-      context: ..
+      context: ..          # repo root
       dockerfile: ingestion_backend/Dockerfile
     restart: unless-stopped
     ports:
