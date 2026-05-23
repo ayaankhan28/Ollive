@@ -4,6 +4,7 @@ const HTTP_BASE =
   process.env.NEXT_PUBLIC_BACKEND_HTTP_URL || 'http://localhost:8000'
 const API_BASE = `${HTTP_BASE}/api/v1`
 
+
 async function apiRequest<T>(path: string, options?: RequestInit): Promise<T> {
   const url = `${API_BASE}${path}`
   const response = await fetch(url, {
