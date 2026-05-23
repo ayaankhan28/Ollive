@@ -4,8 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { getSummary, getTraces, getErrorRate } from '@/lib/api'
 import { Trace, ErrorRatePoint, SummaryResponse } from '@/lib/types'
-import { Clock3, Minus } from 'lucide-react'
-import LiveTraceFeed from '@/components/LiveTraceFeed'
+import { Clock3 } from 'lucide-react'
 import ErrorRateChart from '@/components/ErrorRateChart'
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -260,36 +259,8 @@ export default function DashboardPage() {
             )}
           </div>
 
-          {/* ── Bottom 3 dark panels ── */}
-          <div className="grid grid-cols-3 gap-4 shrink-0">
-            {/* Token density */}
-            <div className="bg-[#141414] border border-[#1a1a1a] rounded-[10px] p-4">
-              <div className="text-[11px] text-[#555] mb-1">Token density · last 7d</div>
-              <div className="text-[10px] text-[#333] mb-3">
-                {summary.total_tokens === 0 ? 'no tokens recorded' : `${fmt(summary.total_tokens)} total`}
-              </div>
-              <div className="flex items-end gap-1 h-10">
-                {summary.by_provider.map((p) => {
-                  const pct = summary.total_tokens > 0 ? ((p.total_tokens ?? 0) / summary.total_tokens) * 100 : 0
-                  return (
-                    <div key={p.provider} className="flex-1 flex flex-col items-center gap-1">
-                      <div
-                        className="w-full bg-[#7c3aed]/40 rounded-sm"
-                        style={{ height: `${Math.max(pct * 0.36, 4)}px` }}
-                        title={`${p.provider}: ${fmt(p.total_tokens ?? 0)} tokens`}
-                      />
-                      <span className="text-[9px] font-mono text-[#444] capitalize">{p.provider.slice(0, 4)}</span>
-                    </div>
-                  )
-                })}
-                {summary.by_provider.length === 0 && (
-                  <div className="w-full h-8 flex items-center justify-center">
-                    <Minus className="w-3 h-3 text-[#2a2a2a]" />
-                  </div>
-                )}
-              </div>
-            </div>
-
+          {/* ── Bottom 2 dark panels ── */}
+          <div className="grid grid-cols-2 gap-4 shrink-0">
             {/* P95 gauge */}
             <div className="bg-[#141414] border border-[#1a1a1a] rounded-[10px] p-4">
               <div className="text-[11px] text-[#555] mb-1">P95 latency · 24h</div>
@@ -330,10 +301,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* ── Right: live SSE feed ── */}
-        <div className="w-[260px] shrink-0 border-l border-[#1a1a1a] p-3">
-          <LiveTraceFeed />
-        </div>
       </div>
     </div>
   )

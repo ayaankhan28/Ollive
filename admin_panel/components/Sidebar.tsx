@@ -8,10 +8,8 @@ import {
   BarChart3,
   ChevronDown,
   GitBranch,
-  HelpCircle,
   LayoutGrid,
   MessageSquare,
-  Settings,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 
@@ -23,10 +21,7 @@ const nav = [
   { href: '/dashboard/metrics',  label: 'Metrics',   icon: BarChart3 },
 ]
 
-const workspace = [
-  { href: '#', label: 'Settings', icon: Settings },
-  { href: '#', label: 'Help',     icon: HelpCircle },
-]
+const workspace: { href: string; label: string; icon: React.ElementType }[] = []
 
 function NavItem({
   href, label, icon: Icon, dot, badge,
@@ -91,15 +86,6 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      {/* Workspace section */}
-      <div className="mt-5 px-4 mb-1.5">
-        <span className="text-[10px] font-medium text-[#333] uppercase tracking-[0.08em]">Workspace</span>
-      </div>
-      <nav className="px-2 space-y-0.5">
-        {workspace.map((item) => (
-          <NavItem key={item.href + item.label} {...item} />
-        ))}
-      </nav>
 
       <div className="flex-1" />
 
