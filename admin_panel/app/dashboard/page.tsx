@@ -1,6 +1,9 @@
+'use client'
+
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { getSummary, getTraces, getErrorRate } from '@/lib/api'
-import { Trace, ErrorRatePoint } from '@/lib/types'
+import { Trace, ErrorRatePoint, SummaryResponse } from '@/lib/types'
 import { Clock3, Minus } from 'lucide-react'
 import LiveTraceFeed from '@/components/LiveTraceFeed'
 import ErrorRateChart from '@/components/ErrorRateChart'
@@ -139,23 +142,32 @@ function TraceRow({ trace }: { trace: Trace }) {
 
 // ── Page ────────────────────────────────────────────────────────────────────
 
-export default async function DashboardPage() {
-  let summary = null
-  let recentTraces: Trace[] = []
-  let errorRateData: ErrorRatePoint[] = []
-  let hasError = false
+export default function DashboardPage() {
+  const [summary, setSummary] = useState<SummaryResponse | null>(null)
+  const [recentTraces, setRecentTraces] = useState<Trace[]>([])
+  const [errorRateData, setErrorRateData] = useState<ErrorRatePoint[]>([])
+  const [hasError, setHasError] = useState(false)
+  const [loading, setLoading] = useState(true)
 
-  try {
-    const [s, t, e] = await Promise.all([
-      getSummary(),
-      getTraces({ limit: 20 }),
-      getErrorRate(24),
-    ])
-    summary = s
-    recentTraces = t.traces
-    errorRateData = e.data
-  } catch {
-    hasError = true
+  useEffect(() => {
+    Promise.all([getSummary(), getTraces({ limit: 20 }), getErrorRate(24)])
+      .then(([s, t, e]) => {
+        setSummary(s)
+        setRecentTraces(t.traces)
+        setErrorRateData(e.data)
+      })
+      .catch(() => setHasError(true))
+      .finally(() => setLoading(false))
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-[13px] text-[#555]">Loading…</div>
+        </div>
+      </div>
+    )
   }
 
   if (hasError || !summary) {

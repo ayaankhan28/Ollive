@@ -39,6 +39,11 @@ spec:
             secretKeyRef:
               name: ollive-secrets
               key: OPENAI_API_KEY
+        - name: TAVILY_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: ollive-secrets
+              key: TAVILY_API_KEY
         resources:
           requests:
             cpu: 150m

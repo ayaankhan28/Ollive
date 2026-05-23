@@ -1,8 +1,10 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { getTraces } from '@/lib/api'
-import { Trace } from '@/lib/types'
-
-// ── helpers ────────────────────────────────────────────────────────────────
+import { Trace, TraceListResponse } from '@/lib/types'
 
 function fmtMs(ms: number | null): string {
   if (!ms) return '—'
@@ -18,8 +20,6 @@ function fmtDate(d: string | null): string {
   })
 }
 
-// ── Status badge ────────────────────────────────────────────────────────────
-
 function StatusBadge({ status }: { status: Trace['status'] }) {
   const styles: Record<string, string> = {
     success:   'badge badge-success',
@@ -27,17 +27,8 @@ function StatusBadge({ status }: { status: Trace['status'] }) {
     cancelled: 'badge badge-cancelled',
     pending:   'badge badge-pending',
   }
-  const dots: Record<string, string> = {
-    success: '●', error: '●', cancelled: '●', pending: '●',
-  }
-  return (
-    <span className={styles[status] ?? styles.pending}>
-      {dots[status]} {status}
-    </span>
-  )
+  return <span className={styles[status] ?? styles.pending}>● {status}</span>
 }
-
-// ── Span type badge ─────────────────────────────────────────────────────────
 
 const SPAN_BADGE: Record<string, string> = {
   trace:      'bg-purple-500/10 text-purple-400 border-purple-500/20',
@@ -59,30 +50,27 @@ function SpanBadge({ type }: { type: string }) {
 
 const STATUSES = ['', 'success', 'error', 'cancelled']
 
-// ── Page ────────────────────────────────────────────────────────────────────
+export default function TracesPage() {
+  const searchParams = useSearchParams()
+  const page = Number(searchParams.get('page') ?? 1)
+  const status = searchParams.get('status') ?? undefined
+  const provider = searchParams.get('provider') ?? undefined
 
-export default async function TracesPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ page?: string; status?: string; provider?: string }>
-}) {
-  const { page: _page, status, provider } = await searchParams
-  const page = Number(_page ?? 1)
+  const [data, setData] = useState<TraceListResponse | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
 
-  let data = null
-  let error = false
-  try {
-    // roots_only=true — only fetch agent-turn root spans
-    // child spans (llm.anthropic, tool.*) appear inside the trace detail view
-    data = await getTraces({ page, limit: 30, status, provider })
-  } catch {
-    error = true
-  }
+  useEffect(() => {
+    setLoading(true)
+    setError(false)
+    getTraces({ page, limit: 30, status, provider })
+      .then(setData)
+      .catch(() => setError(true))
+      .finally(() => setLoading(false))
+  }, [page, status, provider])
 
   return (
     <div className="flex flex-col h-full">
-
-      {/* Header */}
       <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#1a1a1a] shrink-0">
         <div>
           <h1 className="text-[13px] font-medium text-[#ccc]">Traces</h1>
@@ -95,7 +83,6 @@ export default async function TracesPage({
         )}
       </div>
 
-      {/* Status filters */}
       <div className="flex items-center gap-1.5 px-5 py-2.5 border-b border-[#161616] shrink-0">
         <span className="text-[10px] text-[#333] mr-1">status</span>
         {STATUSES.map((s) => (
@@ -114,12 +101,11 @@ export default async function TracesPage({
         ))}
       </div>
 
-      {/* Table */}
       <div className="flex-1 overflow-auto">
-        {error ? (
-          <div className="flex items-center justify-center h-32 text-[12px] text-[#444]">
-            Could not load traces
-          </div>
+        {loading ? (
+          <div className="flex items-center justify-center h-32 text-[12px] text-[#444]">Loading…</div>
+        ) : error ? (
+          <div className="flex items-center justify-center h-32 text-[12px] text-[#444]">Could not load traces</div>
         ) : !data || data.traces.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-48 gap-2">
             <div className="text-[12px] text-[#444]">No traces yet</div>
@@ -137,59 +123,30 @@ export default async function TracesPage({
             </thead>
             <tbody>
               {data.traces.map((t) => (
-                <tr
-                  key={t.trace_id}
-                  className="border-b border-[#141414] hover:bg-white/[0.015] transition-colors group"
-                >
-                  {/* Time */}
-                  <td className="px-5 py-3 text-[11px] font-mono text-[#555] whitespace-nowrap">
-                    {fmtDate(t.created_at)}
-                  </td>
-
-                  {/* Name + type badge */}
+                <tr key={t.trace_id} className="border-b border-[#141414] hover:bg-white/[0.015] transition-colors group">
+                  <td className="px-5 py-3 text-[11px] font-mono text-[#555] whitespace-nowrap">{fmtDate(t.created_at)}</td>
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-2">
                       <SpanBadge type={t.span_type} />
-                      <span className="text-[11px] font-mono text-[#888]">
-                        {t.name || `${t.span_type}.${t.provider}`}
-                      </span>
+                      <span className="text-[11px] font-mono text-[#888]">{t.name || `${t.span_type}.${t.provider}`}</span>
                     </div>
                     {t.input_preview && (
-                      <div className="text-[10px] text-[#444] mt-0.5 truncate max-w-[180px]">
-                        {t.input_preview.slice(0, 60)}
-                      </div>
+                      <div className="text-[10px] text-[#444] mt-0.5 truncate max-w-[180px]">{t.input_preview.slice(0, 60)}</div>
                     )}
                   </td>
-
-                  {/* Provider / Model */}
                   <td className="px-5 py-3">
                     <div className="text-[11px] text-[#777] capitalize">{t.provider}</div>
                     <div className="text-[10px] font-mono text-[#444]">{t.model}</div>
                   </td>
-
-                  {/* Status */}
                   <td className="px-5 py-3"><StatusBadge status={t.status} /></td>
-
-                  {/* Latency */}
                   <td className="px-5 py-3 text-[11px] font-mono text-[#888] tabular-nums">{fmtMs(t.latency_ms)}</td>
-
-                  {/* TTFT */}
                   <td className="px-5 py-3 text-[11px] font-mono text-[#555] tabular-nums">{fmtMs(t.first_token_latency_ms)}</td>
-
-                  {/* Tokens */}
                   <td className="px-5 py-3 text-[11px] font-mono text-[#888] tabular-nums">{t.total_tokens ?? '—'}</td>
-
-                  {/* Cost */}
                   <td className="px-5 py-3 text-[11px] font-mono text-[#666] tabular-nums">
                     {t.estimated_cost_usd != null ? `$${t.estimated_cost_usd.toFixed(5)}` : '—'}
                   </td>
-
-                  {/* View link */}
                   <td className="px-5 py-3">
-                    <Link
-                      href={`/dashboard/traces/${t.trace_id}`}
-                      className="text-[11px] text-[#333] group-hover:text-[#7c3aed] transition-colors font-mono"
-                    >
+                    <Link href={`/dashboard/traces/${t.trace_id}`} className="text-[11px] text-[#333] group-hover:text-[#7c3aed] transition-colors font-mono">
                       view →
                     </Link>
                   </td>
@@ -200,7 +157,6 @@ export default async function TracesPage({
         )}
       </div>
 
-      {/* Pagination */}
       {data && data.total > 0 && (
         <div className="flex items-center justify-between px-5 py-3 border-t border-[#1a1a1a] shrink-0">
           <span className="text-[11px] text-[#444] font-mono">
@@ -208,18 +164,14 @@ export default async function TracesPage({
           </span>
           <div className="flex gap-1.5">
             {page > 1 && (
-              <Link
-                href={`/dashboard/traces?page=${page - 1}${status ? `&status=${status}` : ''}`}
-                className="px-3 py-1.5 text-[11px] border border-[#1e1e1e] text-[#555] hover:text-[#888] rounded-[5px] transition-colors"
-              >
+              <Link href={`/dashboard/traces?page=${page - 1}${status ? `&status=${status}` : ''}`}
+                className="px-3 py-1.5 text-[11px] border border-[#1e1e1e] text-[#555] hover:text-[#888] rounded-[5px] transition-colors">
                 ← prev
               </Link>
             )}
             {data.total > page * 30 && (
-              <Link
-                href={`/dashboard/traces?page=${page + 1}${status ? `&status=${status}` : ''}`}
-                className="px-3 py-1.5 text-[11px] border border-[#1e1e1e] text-[#555] hover:text-[#888] rounded-[5px] transition-colors"
-              >
+              <Link href={`/dashboard/traces?page=${page + 1}${status ? `&status=${status}` : ''}`}
+                className="px-3 py-1.5 text-[11px] border border-[#1e1e1e] text-[#555] hover:text-[#888] rounded-[5px] transition-colors">
                 next →
               </Link>
             )}

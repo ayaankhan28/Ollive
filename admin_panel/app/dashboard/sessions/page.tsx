@@ -1,5 +1,10 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { getSessions } from '@/lib/api'
+import { SessionListResponse } from '@/lib/types'
 
 function fmtDate(d: string | null): string {
   if (!d) return '—'
@@ -15,26 +20,25 @@ function fmtTokens(n: number): string {
   return String(n)
 }
 
-export default async function SessionsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ page?: string }>
-}) {
-  const { page: _page } = await searchParams
-  const page = Number(_page ?? 1)
-  let data = null
-  let error = false
+export default function SessionsPage() {
+  const searchParams = useSearchParams()
+  const page = Number(searchParams.get('page') ?? 1)
 
-  try {
-    data = await getSessions(page, 20)
-  } catch {
-    error = true
-  }
+  const [data, setData] = useState<SessionListResponse | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
+
+  useEffect(() => {
+    setLoading(true)
+    setError(false)
+    getSessions(page, 20)
+      .then(setData)
+      .catch(() => setError(true))
+      .finally(() => setLoading(false))
+  }, [page])
 
   return (
     <div className="flex flex-col h-full">
-
-      {/* Header */}
       <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#1a1a1a] shrink-0">
         <div>
           <h1 className="text-[13px] font-medium text-[#ccc]">Sessions</h1>
@@ -47,9 +51,10 @@ export default async function SessionsPage({
         )}
       </div>
 
-      {/* Table */}
       <div className="flex-1 overflow-auto">
-        {error ? (
+        {loading ? (
+          <div className="flex items-center justify-center h-32 text-[12px] text-[#444]">Loading…</div>
+        ) : error ? (
           <div className="flex items-center justify-center h-32 text-[12px] text-[#444]">Could not load sessions</div>
         ) : !data || data.sessions.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-48 gap-2">
@@ -67,15 +72,9 @@ export default async function SessionsPage({
             </thead>
             <tbody>
               {data.sessions.map((s) => (
-                <tr
-                  key={s.session_id}
-                  className="border-b border-[#141414] hover:bg-white/[0.02] transition-colors group cursor-pointer"
-                >
+                <tr key={s.session_id} className="border-b border-[#141414] hover:bg-white/[0.02] transition-colors group cursor-pointer">
                   <td className="px-5 py-3.5">
-                    <Link
-                      href={`/dashboard/sessions/${s.session_id}`}
-                      className="flex items-center gap-2"
-                    >
+                    <Link href={`/dashboard/sessions/${s.session_id}`} className="flex items-center gap-2">
                       <div className="w-[6px] h-[6px] rounded-full bg-emerald-400/60 shrink-0" />
                       <span className="font-mono text-[11px] text-[#666] group-hover:text-[#999] transition-colors">
                         {s.session_id.slice(0, 8)}…{s.session_id.slice(-4)}
@@ -87,9 +86,7 @@ export default async function SessionsPage({
                   <td className="px-5 py-3.5 text-[11px] font-mono text-[#777] tabular-nums">
                     {s.avg_latency_ms ? `${Math.round(s.avg_latency_ms)}ms` : '—'}
                   </td>
-                  <td className="px-5 py-3.5 text-[11px] font-mono text-[#666] tabular-nums">
-                    ${s.total_cost_usd.toFixed(4)}
-                  </td>
+                  <td className="px-5 py-3.5 text-[11px] font-mono text-[#666] tabular-nums">${s.total_cost_usd.toFixed(4)}</td>
                   <td className="px-5 py-3.5 text-[11px] text-[#444]">{fmtDate(s.last_trace_at)}</td>
                 </tr>
               ))}
@@ -98,7 +95,6 @@ export default async function SessionsPage({
         )}
       </div>
 
-      {/* Pagination */}
       {data && data.total > 0 && (
         <div className="flex items-center justify-between px-5 py-3 border-t border-[#1a1a1a] shrink-0">
           <span className="text-[11px] text-[#444] font-mono">page {page} of {Math.ceil(data.total / 20)}</span>

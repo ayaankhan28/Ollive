@@ -1,29 +1,41 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { getSessionDetail } from '@/lib/api'
+import { SessionDetailResponse } from '@/lib/types'
 import { ArrowLeft } from 'lucide-react'
-import { notFound } from 'next/navigation'
 import LiveSessionDetail from '@/components/LiveSessionDetail'
 
-export default async function SessionDetailPage({
-  params,
-}: {
-  params: Promise<{ session_id: string }>
-}) {
-  const { session_id } = await params
+export default function SessionDetailPage() {
+  const { session_id } = useParams<{ session_id: string }>()
+  const [data, setData] = useState<SessionDetailResponse | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [notFound, setNotFound] = useState(false)
 
-  let data = null
-  try {
-    data = await getSessionDetail(session_id)
-  } catch {
-    notFound()
-  }
+  useEffect(() => {
+    getSessionDetail(session_id)
+      .then(setData)
+      .catch(() => setNotFound(true))
+      .finally(() => setLoading(false))
+  }, [session_id])
 
   const shortId = `${session_id.slice(0, 8)}…${session_id.slice(-4)}`
 
+  if (loading) return (
+    <div className="flex items-center justify-center h-full text-[12px] text-[#444]">Loading session…</div>
+  )
+
+  if (notFound) return (
+    <div className="flex flex-col items-center justify-center h-full gap-3">
+      <div className="text-[13px] text-[#555]">Session not found</div>
+      <Link href="/dashboard/sessions" className="text-[11px] text-[#444] hover:text-[#777]">← back to sessions</Link>
+    </div>
+  )
+
   return (
     <div className="flex flex-col h-full">
-
-      {/* Header */}
       <div className="flex items-center gap-3 px-5 py-3.5 border-b border-[#1a1a1a] shrink-0">
         <Link href="/dashboard/sessions" className="text-[#333] hover:text-[#666] transition-colors">
           <ArrowLeft className="w-3.5 h-3.5" />
@@ -40,13 +52,8 @@ export default async function SessionDetailPage({
         </div>
       </div>
 
-      {/* Live turn list — client component subscribes to SSE and appends new turns/spans */}
       <div className="flex-1 overflow-y-auto p-5">
-        {!data || data.turns.length === 0 ? (
-          <LiveSessionDetail initialTurns={[]} sessionId={session_id} />
-        ) : (
-          <LiveSessionDetail initialTurns={data.turns} sessionId={session_id} />
-        )}
+        <LiveSessionDetail initialTurns={data?.turns ?? []} sessionId={session_id} />
       </div>
     </div>
   )
