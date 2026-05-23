@@ -1,8 +1,9 @@
 import Link from 'next/link'
-import { getSummary, getTraces } from '@/lib/api'
-import { Trace } from '@/lib/types'
+import { getSummary, getTraces, getErrorRate } from '@/lib/api'
+import { Trace, ErrorRatePoint } from '@/lib/types'
 import { Clock3, Minus } from 'lucide-react'
 import LiveTraceFeed from '@/components/LiveTraceFeed'
+import ErrorRateChart from '@/components/ErrorRateChart'
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -141,12 +142,18 @@ function TraceRow({ trace }: { trace: Trace }) {
 export default async function DashboardPage() {
   let summary = null
   let recentTraces: Trace[] = []
+  let errorRateData: ErrorRatePoint[] = []
   let hasError = false
 
   try {
-    const [s, t] = await Promise.all([getSummary(), getTraces({ limit: 20 })])
+    const [s, t, e] = await Promise.all([
+      getSummary(),
+      getTraces({ limit: 20 }),
+      getErrorRate(24),
+    ])
     summary = s
     recentTraces = t.traces
+    errorRateData = e.data
   } catch {
     hasError = true
   }
@@ -241,8 +248,8 @@ export default async function DashboardPage() {
             )}
           </div>
 
-          {/* ── Bottom 2 dark panels ── */}
-          <div className="grid grid-cols-2 gap-4 shrink-0">
+          {/* ── Bottom 3 dark panels ── */}
+          <div className="grid grid-cols-3 gap-4 shrink-0">
             {/* Token density */}
             <div className="bg-[#141414] border border-[#1a1a1a] rounded-[10px] p-4">
               <div className="text-[11px] text-[#555] mb-1">Token density · last 7d</div>
@@ -296,6 +303,17 @@ export default async function DashboardPage() {
                 <span>P50: {summary.avg_latency_ms ? `${Math.round(summary.avg_latency_ms)}ms` : '—'}</span>
                 <span>0 fail</span>
               </div>
+            </div>
+
+            {/* Error rate chart */}
+            <div className="bg-[#141414] border border-[#1a1a1a] rounded-[10px] p-4">
+              <div className="text-[11px] text-[#555] mb-1">Error rate · 24h</div>
+              <div className="text-[10px] text-[#333] mb-3">
+                {errorRateData.length === 0
+                  ? 'no data'
+                  : `${summary.failed_traces} errors · ${(summary.success_rate * 100).toFixed(1)}% success`}
+              </div>
+              <ErrorRateChart data={errorRateData} />
             </div>
           </div>
         </div>

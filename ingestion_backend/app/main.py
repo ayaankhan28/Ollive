@@ -9,6 +9,8 @@ from fastapi.responses import JSONResponse
 from app.api.v1.router import api_router
 from app.config import settings
 from app.db.base import close_db, init_db
+from app.redis_client import close_redis
+from app.workers import redis_consumer
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -18,8 +20,11 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("Starting observe-me ingestion backend...")
     await init_db()
+    await redis_consumer.start()
     yield
     logger.info("Shutting down observe-me ingestion backend...")
+    await redis_consumer.stop()
+    await close_redis()
     await close_db()
 
 

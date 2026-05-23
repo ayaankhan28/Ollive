@@ -11,7 +11,8 @@ RUN pip install --no-cache-dir \
     psycopg2-binary==2.9.9 \
     python-dotenv==1.0.0 \
     "pydantic[email]==2.9.2" \
-    "pydantic-settings==2.5.2"
+    "pydantic-settings==2.5.2" \
+    "redis[hiredis]>=5.0.0"
 
 COPY ingestion_backend/. .
 

@@ -1,4 +1,5 @@
 import type {
+  ErrorRateResponse,
   MetricsResponse,
   SessionDetailResponse,
   SessionListResponse,
@@ -64,4 +65,8 @@ export async function getSessions(page = 1, limit = 20): Promise<SessionListResp
 
 export async function getSessionDetail(sessionId: string): Promise<SessionDetailResponse> {
   return get(`/analytics/sessions/${sessionId}`)
+}
+
+export async function getErrorRate(hours = 24): Promise<ErrorRateResponse> {
+  return get(`/analytics/errors?hours=${hours}`)
 }

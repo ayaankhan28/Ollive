@@ -191,6 +191,36 @@ async def get_metrics(db: AsyncSession, hours: int = 24) -> MetricsResponse:
     )
 
 
+async def get_error_rate_timeseries(db: AsyncSession, hours: int = 24) -> list[dict]:
+    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+    result = await db.execute(
+        sa.text("""
+            SELECT
+                date_trunc('hour', created_at)                                               AS hour,
+                count(*)                                                                      AS total,
+                sum(CASE WHEN status = 'error' THEN 1 ELSE 0 END)                           AS errors,
+                round(
+                    100.0 * sum(CASE WHEN status = 'error' THEN 1 ELSE 0 END)
+                    / NULLIF(count(*), 0),
+                2)                                                                            AS error_rate
+            FROM obs_traces
+            WHERE created_at >= :since
+            GROUP BY date_trunc('hour', created_at)
+            ORDER BY hour
+        """),
+        {"since": since},
+    )
+    return [
+        {
+            "timestamp": row.hour.isoformat() if row.hour else "",
+            "errors": int(row.errors),
+            "total": int(row.total),
+            "error_rate": float(row.error_rate or 0),
+        }
+        for row in result.all()
+    ]
+
+
 async def get_sessions_analytics(db: AsyncSession, page: int = 1, limit: int = 20) -> SessionListResponse:
     offset = (page - 1) * limit
 

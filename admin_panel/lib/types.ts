@@ -87,6 +87,18 @@ export interface MetricsResponse {
   errors: TimeSeriesPoint[]
 }
 
+export interface ErrorRatePoint {
+  timestamp: string
+  errors: number
+  total: number
+  error_rate: number
+}
+
+export interface ErrorRateResponse {
+  data: ErrorRatePoint[]
+  hours: number
+}
+
 export interface SessionAnalytics {
   session_id: string
   trace_count: number

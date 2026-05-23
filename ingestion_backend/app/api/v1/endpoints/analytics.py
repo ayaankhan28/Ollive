@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.base import get_db
 from app.schemas.analytics import (
+    ErrorRatePoint,
+    ErrorRateResponse,
     MetricsResponse,
     SessionDetailResponse,
     SessionListResponse,
@@ -58,6 +60,18 @@ async def get_trace(trace_id: str, db: AsyncSession = Depends(get_db)):
 @router.get("/analytics/metrics", response_model=MetricsResponse)
 async def get_metrics(hours: int = Query(default=24, ge=1, le=168), db: AsyncSession = Depends(get_db)):
     return await analytics_service.get_metrics(db, hours=hours)
+
+
+@router.get("/analytics/errors", response_model=ErrorRateResponse)
+async def get_error_rate(
+    hours: int = Query(default=24, ge=1, le=168),
+    db: AsyncSession = Depends(get_db),
+):
+    data = await analytics_service.get_error_rate_timeseries(db, hours=hours)
+    return ErrorRateResponse(
+        data=[ErrorRatePoint(**point) for point in data],
+        hours=hours,
+    )
 
 
 @router.get("/analytics/sessions", response_model=SessionListResponse)

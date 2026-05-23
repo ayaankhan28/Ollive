@@ -96,6 +96,18 @@ class MetricsResponse(BaseModel):
     errors: list[TimeSeriesPoint]
 
 
+class ErrorRatePoint(BaseModel):
+    timestamp: str
+    errors: int
+    total: int
+    error_rate: float  # 0–100 percentage
+
+
+class ErrorRateResponse(BaseModel):
+    data: list[ErrorRatePoint]
+    hours: int
+
+
 class SessionAnalytics(BaseModel):
     session_id: UUID
     trace_count: int
