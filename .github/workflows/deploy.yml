@@ -36,9 +36,10 @@ jobs:
       - name: Build and push backend
         uses: docker/build-push-action@v5
         with:
-          context: .                        # repo root — gives access to sdk/
+          context: .
           file: backend/Dockerfile
-          build-args: SDK_PATH=sdk          # sdk/ relative to repo root
+          build-args: SDK_PATH=sdk
+          platforms: linux/amd64
           push: true
           tags: |
             ${{ env.BACKEND_IMAGE }}:latest
@@ -49,8 +50,9 @@ jobs:
       - name: Build and push ingestion
         uses: docker/build-push-action@v5
         with:
-          context: .                        # repo root
+          context: .
           file: ingestion_backend/Dockerfile
+          platforms: linux/amd64
           push: true
           tags: |
             ${{ env.INGESTION_IMAGE }}:latest
