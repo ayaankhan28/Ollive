@@ -27,6 +27,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/ollive_chat
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
       OBSERVE_ME_ENDPOINT: http://ingestion:8001
     volumes:
       - ./app:/app/app

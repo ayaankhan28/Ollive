@@ -11,11 +11,12 @@ from .context import (
     trace_context, active_span,
 )
 from .decorators import trace_llm
+from .redactor import redact
 from .tracer import Trace
 
 __version__ = "0.1.0"
 __all__ = [
-    "ObserveMeClient", "Trace", "trace_llm",
+    "ObserveMeClient", "Trace", "trace_llm", "redact",
     "configure", "get_client", "start_trace",
     "get_context", "get_active_trace_id", "set_active_trace_id",
     "set_session_id", "set_user_id", "set_conversation_id",

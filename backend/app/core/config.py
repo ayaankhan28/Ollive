@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     # LLM provider credentials
     ANTHROPIC_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
+    OPENAI_API_KEY: str = ""
     TAVILY_API_KEY: str = os.getenv("TAVILY_API_KEY", "")
 
     # Anthropic model config
@@ -32,6 +33,10 @@ class Settings(BaseSettings):
     # Gemini model config
     GEMINI_MODEL: str = "gemini-2.5-flash"
     GEMINI_MAX_TOKENS: int = 8096
+
+    # OpenAI model config
+    OPENAI_MODEL: str = "gpt-4o-mini"
+    OPENAI_MAX_TOKENS: int = 8096
 
     class Config:
         env_file = ".env"

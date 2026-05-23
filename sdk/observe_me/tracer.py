@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Optional
 from uuid import uuid4
 
 from .pricing import estimate_cost
+from .redactor import redact
 
 if TYPE_CHECKING:
     from .client import ObserveMeClient
@@ -58,7 +59,7 @@ class Trace:
         self.conversation_id = conversation_id
         self.temperature = temperature
         self.max_tokens = max_tokens
-        self.input_preview = input_preview[:_PREVIEW_MAX] if input_preview else None
+        self.input_preview = redact(input_preview[:_PREVIEW_MAX]) if input_preview else None
 
         self.started_at: datetime = _utcnow()
         self.completed_at: Optional[datetime] = None
@@ -145,7 +146,7 @@ class Trace:
         if self._first_chunk_at:
             first_token_ms = int((self._first_chunk_at - self.started_at).total_seconds() * 1000)
 
-        output_preview = "".join(self._chunks)[:_PREVIEW_MAX] if self._chunks else None
+        output_preview = redact("".join(self._chunks)[:_PREVIEW_MAX]) if self._chunks else None
 
         return {
             "trace_id": self.trace_id,

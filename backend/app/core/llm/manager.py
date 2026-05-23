@@ -3,6 +3,7 @@ from typing import AsyncIterator, List, Dict
 
 from app.core.llm.anthropic_provider import AnthropicProvider
 from app.core.llm.gemini_provider import GeminiProvider
+from app.core.llm.openai_provider import OpenAIProvider
 
 logger = logging.getLogger(__name__)
 
@@ -15,49 +16,44 @@ Be concise but thorough. Use markdown formatting when appropriate."""
 class LLMManager:
     def __init__(self):
         self._anthropic = AnthropicProvider()
+        self._openai = OpenAIProvider()
         self._gemini = GeminiProvider()
 
     async def stream_chat(
         self, messages: List[Dict], system: str = ""
     ) -> AsyncIterator[str]:
-        """Try Anthropic first, fall back to Gemini on error."""
+        """Try Anthropic → OpenAI → Gemini, stopping at first success."""
         if not system:
             system = SYSTEM_PROMPT
 
-        # Try Anthropic first
-        try:
-            logger.info("Attempting to stream chat via Anthropic")
-            async for chunk in self._anthropic.stream_chat(messages, system):
-                yield chunk
-            logger.info("Anthropic stream completed successfully")
-            return
-        except Exception as e:
-            logger.warning(f"Anthropic failed, falling back to Gemini: {e}")
+        providers = [
+            ("Anthropic", self._anthropic),
+            ("OpenAI", self._openai),
+            ("Gemini", self._gemini),
+        ]
+        last_error: Exception | None = None
+        for name, provider in providers:
+            try:
+                logger.info("Attempting stream via %s", name)
+                async for chunk in provider.stream_chat(messages, system):
+                    yield chunk
+                logger.info("%s stream completed", name)
+                return
+            except Exception as e:
+                logger.warning("%s failed, trying next provider: %s", name, e)
+                last_error = e
 
-        # Fallback to Gemini
-        try:
-            logger.info("Attempting to stream chat via Gemini (fallback)")
-            async for chunk in self._gemini.stream_chat(messages, system):
-                yield chunk
-            logger.info("Gemini stream completed successfully")
-        except Exception as e:
-            logger.error(f"Both LLM providers failed. Gemini error: {e}")
-            raise RuntimeError(
-                f"All LLM providers failed. Last error: {e}"
-            )
+        raise RuntimeError(f"All LLM providers failed. Last error: {last_error}")
 
     async def generate_title(self, first_message: str) -> str:
-        """Generate a session title, trying Anthropic first then Gemini."""
-        try:
-            return await self._anthropic.generate_title(first_message)
-        except Exception as e:
-            logger.warning(f"Anthropic title generation failed: {e}, trying Gemini")
+        """Generate a session title, trying all providers in order."""
+        for provider in (self._anthropic, self._openai, self._gemini):
             try:
-                return await self._gemini.generate_title(first_message)
-            except Exception as e2:
-                logger.error(f"Both providers failed for title generation: {e2}")
-                words = first_message.split()[:4]
-                return " ".join(words) if words else "New Chat"
+                return await provider.generate_title(first_message)
+            except Exception as e:
+                logger.warning("%s title generation failed: %s", provider.name, e)
+        words = first_message.split()[:4]
+        return " ".join(words) if words else "New Chat"
 
 
 # Singleton instance
