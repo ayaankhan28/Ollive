@@ -8,6 +8,7 @@ import type {
   TraceListResponse,
 } from './types'
 
+
 // Server Components run inside Docker → need the internal service hostname.
 // Browser (client components) → use the public-facing localhost URL.
 function getBase(): string {
