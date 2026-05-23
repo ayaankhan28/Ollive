@@ -36,6 +36,8 @@ export interface Trace {
   created_at: string
 }
 
+export type TraceOut = Trace
+
 export interface TraceDetail extends Trace {
   stream_events: StreamEvent[]
   children: Trace[]
