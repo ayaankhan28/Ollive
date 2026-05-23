@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { getTraces } from '@/lib/api'
@@ -50,7 +50,7 @@ function SpanBadge({ type }: { type: string }) {
 
 const STATUSES = ['', 'success', 'error', 'cancelled']
 
-export default function TracesPage() {
+function TracesContent() {
   const searchParams = useSearchParams()
   const page = Number(searchParams.get('page') ?? 1)
   const status = searchParams.get('status') ?? undefined
@@ -179,5 +179,13 @@ export default function TracesPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function TracesPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-full text-[12px] text-[#444]">Loading…</div>}>
+      <TracesContent />
+    </Suspense>
   )
 }

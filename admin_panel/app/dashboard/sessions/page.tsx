@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { getSessions } from '@/lib/api'
@@ -20,7 +20,7 @@ function fmtTokens(n: number): string {
   return String(n)
 }
 
-export default function SessionsPage() {
+function SessionsContent() {
   const searchParams = useSearchParams()
   const page = Number(searchParams.get('page') ?? 1)
 
@@ -109,5 +109,13 @@ export default function SessionsPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function SessionsPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-full text-[12px] text-[#444]">Loading…</div>}>
+      <SessionsContent />
+    </Suspense>
   )
 }
